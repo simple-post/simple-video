@@ -1,0 +1,35 @@
+---
+name: simple-video
+description: Create, re-render and export captioned photo-parallax videos with the Simple Video CLI, using local photos or user-configured image generation. Use for slideshow animation, split-screen comparisons, subtle depth motion and reproducible video recipes; publishing belongs to a separate tool.
+---
+
+# Simple Video
+
+Use the same non-interactive CLI as the user. Find `simple-video` on PATH; in a source checkout, use `node /path/to/simple-video/bin/run.js` after `npm ci` and `npm run build`. Every command emits a JSON result on stdout. Progress/errors use stderr; a nonzero exit means inspect the error before retrying. `--json --no-input` makes the automation contract explicit.
+
+## Discover and prepare
+
+- Run `--help`, `COMMAND --help`, and `schema` when flags or recipe fields are uncertain. The schema is in the JSON response's `data` property. Do not invent command flags or send arbitrary SimplePost API payloads to this CLI.
+- Select `--project DIR` consistently; all photos, audio and keys belong to that project/user. The default recipe is `DIR/simple-video.json`. Recipe-relative file paths work from any invocation directory.
+- `init DIR --template slideshow --local` creates original sample artwork without paid generation. Templates are `slideshow`, `comparison`, `single` and `challenge`.
+- `doctor` checks dependencies and key presence. `setup --dry-run` describes downloads; `setup` installs a managed Python/DepthFlow environment and local depth weights. `doctor --check-render` checks actual GPU rendering without a paid API call. `--home` consistently selects a nondefault runtime.
+- The user supplies their own `OPENAI_API_KEY` through environment variables or an explicit `--env-file`. Do not look for keys in unrelated projects or print them. Local photos need no key.
+
+## Make and iterate
+
+1. Write/edit the recipe, then run `plan`. Check exact asset IDs, image count, duration, budget and source photos. `image.files` maps every asset ID to a local path; omit it for OpenAI generation. Do not mix provider modes in one create.
+2. Use a stable descriptive `--id`. `create --id NAME` imports local photos; generated photos require `--execute`. Use the user's authorized generation scope and budget. Planning and credential setup alone do not authorize spending.
+3. To inspect photos first, use `create --id NAME --execute --images-only`, then run the same command without `--images-only` to render cached images. For local files omit `--execute`.
+4. Inspect the reported MP4/contact sheet. Adjust motion or audio with `render --run NAME --intensity 0.07` or `--soundtrack FILE`; these reuse verified images and make no image-generation calls. Depth weights can download locally if missing.
+5. Export the chosen validated result with `export --run NAME --output DIR`; for a variant add `--variant NAME_FROM_RENDER`. Keep credits from the export manifest. Give the user the resulting local file and any material limitations.
+
+## Invariants that matter
+
+- Prefer the subtle DepthFlow preset: story intensity `0.105`, comparison `0.15`, or lower when edges stretch. Keep duration unchanged when reducing travel. Use `pan`/`diagonal` without mid-shot reversal. `alternateDirections` changes direction only at cuts. The CPU renderer is a visibly different, explicit option; do not silently substitute it when graphics setup fails.
+- Keep music dominant, select a catchy source excerpt and add quiet effects only for specific visible events. Use licensed user-supplied audio and preserve attribution. No trend recording is included by the package.
+- Comparison templates with `winnerPattern: "final-flip"` keep the same winning side until the final round. Increase challenger counts; do not reveal the switch early.
+- Repeat an unchanged run ID to resume. Changed recipes use a new ID; shared verified photos are reused. Never automatically loop `--retry-uncertain`: inspect the persisted state/provider first, since another request may duplicate a charge. It also requires paid-generation authorization and budget.
+- Do not delete caches, overwrite source photos or edit receipts to force a retry. Read `status` and the structured error. Export refuses an existing destination video.
+- This CLI never publishes or sends previews externally. A user's request to generate is not permission to post. Use SimplePost separately when publishing is requested, and retain the generated media's credits.
+
+For complete flags, error codes and recovery, read [CLI reference](../../docs/cli.md) in the source repository. If this skill was copied alone, use `--help` and `schema` as the source of truth; the maintained docs are at https://github.com/simple-post/simple-video/tree/main/docs.

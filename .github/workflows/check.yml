@@ -1,0 +1,32 @@
+name: Check CLI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install Linux media tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-liberation
+      - name: Install macOS media tools
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+      - run: npm test
+      - run: npm run check
+      - run: npm run format:check
+      - run: npm pack --dry-run
+      - run: node bin/run.js setup --dry-run --json --no-input

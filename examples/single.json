@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "name": "A little perspective",
+  "look": "Warm natural photography, layered foreground and distant scenery, consistent lighting.",
+  "image": {
+    "model": "gpt-image-2.5-flare",
+    "quality": "medium"
+  },
+  "video": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "motion": "parallax",
+    "parallaxPath": "diagonal",
+    "parallaxEngine": "depthflow",
+    "parallaxIntensity": 0.105,
+    "audio": "silent"
+  },
+  "budget": {
+    "maxRequests": 3,
+    "maxEstimatedUsd": 3,
+    "estimatePerImageUsd": 1
+  },
+  "type": "loop",
+  "prompt": "A quiet mountain lake with flowers in the foreground, a wooden boat in the middle and distant peaks.",
+  "caption": "Take a moment",
+  "duration": 6
+}

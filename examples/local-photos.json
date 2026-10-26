@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "name": "A little perspective",
+  "look": "Warm natural photography, layered foreground and distant scenery, consistent lighting.",
+  "image": {
+    "model": "gpt-image-2.5-flare",
+    "quality": "medium",
+    "files": {
+      "shot-0": "photos/start.jpg",
+      "shot-1": "photos/middle.jpg",
+      "shot-2": "photos/finish.jpg"
+    }
+  },
+  "video": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "motion": "parallax",
+    "parallaxPath": "diagonal",
+    "parallaxEngine": "depthflow",
+    "parallaxIntensity": 0.105,
+    "audio": "silent"
+  },
+  "budget": {
+    "maxRequests": 3,
+    "maxEstimatedUsd": 3,
+    "estimatePerImageUsd": 1
+  },
+  "type": "story",
+  "character": "A small scruffy terrier with a blue collar",
+  "shots": [
+    {
+      "prompt": "A small terrier facing a huge muddy puddle, wet leaves in the foreground, garden in the distance.",
+      "caption": "A small obstacle",
+      "duration": 3
+    },
+    {
+      "prompt": "The same terrier proudly jumping over the garden puddle, with layered flowers and distant trees.",
+      "caption": "A big decision",
+      "duration": 3,
+      "referencePrevious": true
+    },
+    {
+      "prompt": "The same muddy terrier sleeping contentedly beside the garden door after the adventure.",
+      "caption": "Worth it",
+      "duration": 3,
+      "referencePrevious": true
+    }
+  ]
+}

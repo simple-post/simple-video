@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "name": "The unexpected matchup",
+  "look": "Warm natural photography, layered foreground and distant scenery, consistent lighting.",
+  "image": {
+    "model": "gpt-image-2.5-flare",
+    "quality": "medium"
+  },
+  "video": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "motion": "parallax",
+    "parallaxPath": "pan",
+    "parallaxEngine": "depthflow",
+    "parallaxIntensity": 0.15,
+    "audio": "silent"
+  },
+  "budget": {
+    "maxRequests": 7,
+    "maxEstimatedUsd": 7,
+    "estimatePerImageUsd": 1
+  },
+  "type": "battle",
+  "hero": "a single giant robot",
+  "classicBattle": true,
+  "winnerPattern": "final-flip",
+  "opponent": "small delivery robots",
+  "environment": "A playful fictional robotics arena with no damage or injuries",
+  "rounds": [
+    {
+      "count": 1,
+      "winner": "hero"
+    },
+    {
+      "count": 3,
+      "winner": "hero"
+    },
+    {
+      "count": 8,
+      "winner": "opponent"
+    }
+  ],
+  "compareDuration": 1.5,
+  "revealDuration": 1.5
+}
