@@ -31,6 +31,7 @@ for (const expected of [
   "bin/run.js",
   "dist/cli.js",
   "dist/runtime.js",
+  "dist/terminal.js",
   "dist/provider.js",
   "README.md",
   "LICENSE",

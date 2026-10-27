@@ -1,6 +1,8 @@
 # CLI contract
 
-All commands work without stdin, prompts or a browser. `simple-video` and `simple-video --help` print help; `--version` prints the version. Other successful commands emit exactly one JSON result on stdout:
+In a terminal, commands print readable summaries and progress messages. Setup explains its downloads and locations, then asks for approval with a default of **No**. Other commands do not prompt. No command needs a browser.
+
+For agents and scripts, use `--json --no-input`. Piped stdout defaults to JSON; `--human` forces readable text when piping. `--human` and `--json` cannot be combined. `--json` never prompts, including when run in a terminal. `simple-video` and `simple-video --help` print help; `--version` prints the version. Other successful JSON-mode commands emit exactly one result on stdout:
 
 ```json
 {
@@ -10,7 +12,7 @@ All commands work without stdin, prompts or a browser. `simple-video` and `simpl
 }
 ```
 
-The actual `data` contains the command's complete result. `--json` explicitly selects the default JSON behavior. `--no-input` makes the non-interactive contract explicit; it never changes authorization. `--quiet` suppresses progress, not errors. Progress uses newline-delimited JSON on stderr:
+The actual `data` contains the command's complete result. `--no-input` prevents prompts; it never grants authorization or selects an output format. `--quiet` suppresses progress, not errors or approval. Progress uses stderr: readable step names and elapsed time in human mode, newline-delimited JSON in JSON mode:
 
 ```json
 { "event": "progress", "stage": "render", "scene": "shot-0" }
@@ -28,11 +30,26 @@ Errors also use stderr and a nonzero exit code:
 }
 ```
 
+Human-mode errors show a short `Error: ...` message instead of a JSON envelope. Use `--json` to inspect structured error codes, validation issues and details.
+
+## Setup approval
+
+```sh
+simple-video setup                         # show plan, then ask [y/N]
+simple-video setup --dry-run               # preview only; no downloads or prompt
+simple-video setup --yes                   # explicit approval, readable terminal progress
+simple-video setup --yes --json --no-input # unattended, machine-readable install
+```
+
+Without `--yes`, setup can ask only when stdin and stderr are terminals and neither `--json` nor `--no-input` is set. Otherwise it exits 2 with `CONFIRMATION_REQUIRED` before creating runtime files or making network requests; `error.details.plan` contains the proposed installation. A declined interactive prompt returns `executed: false` and `cancelled: true`, exiting 0. `--dry-run` always prevents installation, even with `--yes`. The flag belongs to setup and does not bypass `create --execute`.
+
+Setup progress events contain `stage: "setup"`, a `step`, and `status: "started"` or `"complete"`. Completed steps include `elapsedMs`. Long human-mode steps print a periodic elapsed-time update rather than raw installer output.
+
 | Exit | Meaning                                                  |
 | ---- | -------------------------------------------------------- |
 | 0    | Success; inspect `executed` for a plan-only create/setup |
 | 1    | Operation, conflict, or filesystem failure               |
-| 2    | Invalid command arguments or recipe schema               |
+| 2    | Invalid input, or setup approval required                |
 | 3    | Missing dependency/credential or graphics setup failure  |
 | 4    | Provider HTTP failure                                    |
 | 5    | Uncertain generation outcome; automatic retry blocked    |
@@ -49,7 +66,7 @@ Errors also use stderr and a nonzero exit code:
 ## Planning and paid generation
 
 ```sh
-simple-video --project ./story schema > schema-response.json
+simple-video --project ./story schema --json > schema-response.json
 simple-video --project ./story plan
 simple-video --project ./story create --id episode-01 --dry-run
 simple-video --project ./story --env-file ./story/.env create --id episode-01 --execute

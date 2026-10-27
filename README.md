@@ -12,7 +12,7 @@ Requires Node.js 24+ and FFmpeg/ffprobe (with libx264). On macOS: `brew install 
 npm install -g @simple-post/video
 simple-video --version
 
-# Preview locations/downloads, then install isolated Python and DepthFlow.
+# Setup explains downloads, disk usage and locations, then asks to continue (default: No).
 simple-video setup --dry-run
 simple-video setup
 simple-video doctor --check-render
@@ -30,7 +30,7 @@ Alternatively invoke the CLI without a global install:
 npx --yes --package @simple-post/video simple-video --help
 ```
 
-Open the exported MP4 to review it. Replace the sample photos with your own images, or generate photos below. Installing the npm package does not install Python or download the DepthFlow environment; run the explicit setup command once.
+Open the exported MP4 to review it. Replace the sample photos with your own images, or generate photos below. Installing the npm package does not install Python or download the DepthFlow environment. Setup may download several GB; it shows its plan and asks for approval before downloading or installing anything. Press Enter or answer `n` to cancel. For unattended installation, review `setup --dry-run --json` first, then run `setup --yes --json --no-input`.
 
 For development from the private source checkout:
 
@@ -75,7 +75,7 @@ These are photo animations, not synthesized moving subjects. DepthFlow is the de
 | Command                                         | Purpose                                                                   |
 | ----------------------------------------------- | ------------------------------------------------------------------------- |
 | `init [directory] --template slideshow --local` | Create an editable project and optional sample photos                     |
-| `setup [--dry-run] [--skip-model]`              | Install managed Python and DepthFlow; prepare the local depth model       |
+| `setup [--dry-run] [--skip-model] [--yes]`      | Review and approve managed Python, DepthFlow and local model installation |
 | `doctor [--check-render] [--depth]`             | Check dependencies, graphics and optional depth inference                 |
 | `schema`                                        | Print the recipe JSON Schema                                              |
 | `plan [--recipe file.json]`                     | Validate and inspect images, scenes, duration and cost estimates          |
@@ -85,7 +85,7 @@ These are photo animations, not synthesized moving subjects. DepthFlow is the de
 | `export --run NAME --output DIRECTORY`          | Copy a validated run or variant and its metadata for review/publishing    |
 | `skill [--output DIRECTORY]`                    | Locate or copy the included agent skill                                   |
 
-Global flags include `--project`, `--root`, `--home`, `--env-file`, `--json`, `--quiet`, and `--no-input`. Every operation is non-interactive. JSON results go to stdout; JSON progress and errors go to stderr. No browser or stdin interaction is required. See the [complete CLI contract](docs/cli.md).
+Terminal output uses short, readable progress messages and results. Global flags include `--project`, `--root`, `--home`, `--env-file`, `--json`, `--human`, `--quiet`, and `--no-input`. Use `--json --no-input` for agents and scripts: results go to stdout, progress/errors go to stderr, and no prompt appears. Piped stdout also defaults to JSON. Unattended setup requires explicit `--yes`; this does not authorize paid image generation. See the [complete CLI contract](docs/cli.md).
 
 ## Files stay on your machine
 

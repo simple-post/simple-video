@@ -10,6 +10,17 @@ import {
 import { resolve, dirname } from "node:path";
 import { spawn } from "node:child_process";
 
+export class CliError extends Error {
+  constructor(
+    public readonly code: string,
+    public readonly exitCode: number,
+    message: string,
+    public readonly details?: unknown,
+  ) {
+    super(message);
+  }
+}
+
 export const hash = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
 export function stable(value: unknown): string {

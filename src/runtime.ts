@@ -3,7 +3,15 @@ import { resolve, join } from "node:path";
 import { access, chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
-import { atomic, command, hash, readJson, withLock, writeJson } from "./io.js";
+import {
+  atomic,
+  CliError,
+  command,
+  hash,
+  readJson,
+  withLock,
+  writeJson,
+} from "./io.js";
 import { uvAssets } from "./uv-assets.js";
 
 export const UV_VERSION = "0.13.5";
@@ -98,6 +106,9 @@ export function setupPlan(options: {
     python: options.python ?? PYTHON_VERSION,
     packages: PYTHON_PACKAGES,
     modelDownload: !options.skipModel,
+    model: "Depth Anything V2 Small (Hugging Face, local inference)",
+    downloadSize:
+      "May download several GB; size varies by platform and existing caches",
     graphics: "OpenGL 3.3+; checked separately with doctor --check-render",
     systemDependencies: [
       "ffmpeg with libx264",
@@ -170,18 +181,45 @@ export async function setup(options: {
   python?: string;
   skipModel?: boolean;
   dryRun?: boolean;
+  approved?: boolean;
   log?: (event: unknown) => void;
 }) {
   const plan = setupPlan(options);
   if (options.dryRun) return { ...plan, executed: false };
+  if (!options.approved)
+    throw new CliError(
+      "CONFIRMATION_REQUIRED",
+      2,
+      "Setup needs your approval before downloading or installing anything. Run simple-video setup in a terminal to review and confirm, or add --yes for an unattended install. Use --dry-run to preview only.",
+      { plan, executed: false },
+    );
   const p = runtimePaths();
   return withLock(join(p.home, "setup"), async () => {
-    options.log?.({ stage: "setup", step: "uv" });
-    const uv = options.uv ?? (await bootstrapUv());
+    async function step<T>(name: string, action: () => Promise<T>): Promise<T> {
+      const started = Date.now();
+      options.log?.({
+        stage: "setup",
+        step: name,
+        status: "started",
+        ...(name === "depthflow" ? { packages: PYTHON_PACKAGES } : {}),
+      });
+      const value = await action();
+      options.log?.({
+        stage: "setup",
+        step: name,
+        status: "complete",
+        elapsedMs: Date.now() - started,
+      });
+      return value;
+    }
+    const uv = await step("uv", async () => {
+      const binary = options.uv ?? (await bootstrapUv());
+      await command(binary, ["--version"]);
+      return binary;
+    });
     const env = runtimeEnv();
-    await command(uv, ["--version"]);
-    options.log?.({ stage: "setup", step: "python" });
-    if (!(await exists(p.python)))
+    await step("python", async () => {
+      if (await exists(p.python)) return;
       await command(
         uv,
         [
@@ -194,37 +232,36 @@ export async function setup(options: {
         600_000,
         env,
       );
+    });
     const exclude = join(p.home, "excluded-packages.txt");
     await atomic(exclude, "pyaudio\n");
-    options.log?.({
-      stage: "setup",
-      step: "depthflow",
-      packages: PYTHON_PACKAGES,
-    });
-    await command(
-      uv,
-      [
-        "pip",
-        "install",
-        "--python",
+    await step("depthflow", async () => {
+      await command(
+        uv,
+        [
+          "pip",
+          "install",
+          "--python",
+          p.python,
+          "--excludes",
+          exclude,
+          ...PYTHON_PACKAGES,
+        ],
+        1_200_000,
+        env,
+      );
+      await command(
         p.python,
-        "--excludes",
-        exclude,
-        ...PYTHON_PACKAGES,
-      ],
-      1_200_000,
-      env,
-    );
-    await command(
-      p.python,
-      ["-c", "import depthflow, torch; print('runtime imports OK')"],
-      120_000,
-      env,
-    );
+        ["-c", "import depthflow, torch; print('runtime imports OK')"],
+        120_000,
+        env,
+      );
+    });
     if (!options.skipModel) {
-      options.log?.({ stage: "setup", step: "depth-model" });
-      const { prepareDepth } = await import("./depth.js");
-      await prepareDepth(p.models);
+      await step("depth-model", async () => {
+        const { prepareDepth } = await import("./depth.js");
+        await prepareDepth(p.models);
+      });
     }
     await writeJson(join(p.home, "setup.json"), {
       version: 1,

@@ -8,6 +8,19 @@ simple-video setup
 simple-video doctor --check-render
 ```
 
+`setup` first shows its install directory, tools, pinned packages, model and download-size warning. In a terminal it asks `Continue with setup? [y/N]`. Only `y` or `yes` starts installation. Enter, `n`, or closed input cancels without downloading or creating the runtime directory. Existing installations still require confirmation before setup reconciles their packages.
+
+For scripts and agents, inspect the plan and pass explicit approval:
+
+```sh
+simple-video setup --dry-run --json --no-input
+simple-video setup --yes --json --no-input
+```
+
+`--json`, `--no-input`, or non-terminal stdin disables prompts; without `--yes`, setup exits 2 with `CONFIRMATION_REQUIRED` and includes the plan in `error.details`. `--quiet` suppresses progress but never skips approval. `--dry-run` makes no changes, even when combined with `--yes`. Approval applies only to runtime installation; paid generation still needs `create --execute`.
+
+The Python environment, PyTorch packages, model weights and caches can use several GB; the exact download depends on platform and cached files. Terminal progress names each step and reports elapsed time, with a periodic update while a long step runs. Use `--json` for structured progress instead.
+
 Setup downloads a platform-specific uv 0.13.5 archive from Astral's official GitHub release and verifies its pinned SHA-256 digest before extraction. uv creates a managed Python 3.12 virtual environment. Setup installs pinned DepthFlow 0.9.1, ShaderFlow 0.9.1, Broken 0.9.1, PyTorch 2.7.1 and torchvision 0.22.1. Transitive Python dependencies are resolved by uv; they are not yet frozen in a cross-platform lockfile. Unused PyAudio microphone support is excluded. Model weights are prepared unless `--skip-model` is selected.
 
 System Python and shell profiles are not changed. No sudo command is executed. Simple Video has no npm postinstall downloader; its runtime downloads are explicit in setup. Node dependencies can have their own install hooks. Set `ONNXRUNTIME_NODE_INSTALL=skip` during npm installation to skip optional CUDA downloads for the Node depth estimator. A receipt is saved at `HOME/setup.json`. Re-running setup repairs/reconciles packages in that same environment. Do not relocate an installed virtual environment; recreate it using a new `--home` instead.
