@@ -44,3 +44,28 @@ test("the executable reports the version that npm will publish", () => {
     pkg.version,
   );
 });
+
+test("registry verification waits for propagation and rejects mismatched artifacts", () => {
+  const module = pathToFileURL(resolve("scripts/verify-published.mjs")).href;
+  const source = `
+    import assert from 'node:assert/strict';
+    import {verifyPublished} from ${JSON.stringify(module)};
+    const pkg={name:'@simple-post/video',version:'0.1.0',bin:{'simple-video':'bin/run.js'},dist:{integrity:'sha512-tested'}};
+    let requests=0, waits=0;
+    const result=await verifyPublished(pkg.name,pkg.version,pkg.dist.integrity,{
+      fetcher:async()=>++requests===1?new Response('',{status:404}):Response.json(pkg),
+      wait:async()=>{waits++},attempts:2
+    });
+    assert.equal(result.verified,true);assert.equal(requests,2);assert.equal(waits,1);
+    await assert.rejects(verifyPublished(pkg.name,pkg.version,'sha512-wrong',{fetcher:async()=>Response.json(pkg)}),/integrity/);
+    await assert.rejects(verifyPublished(pkg.name,pkg.version,undefined,{fetcher:async()=>new Response('',{status:401})}),/HTTP 401/);
+    console.log('verified');
+  `;
+  assert.equal(
+    execFileSync(process.execPath, ["--input-type=module", "-e", source], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim(),
+    "verified",
+  );
+});

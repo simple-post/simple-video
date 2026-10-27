@@ -78,5 +78,6 @@ jobs:
           PACKAGE_VERSION: ${{ steps.release.outputs.version }}
           DIST_TAG: ${{ steps.release.outputs.dist_tag }}
         run: |
-          npm view "$PACKAGE_NAME@$PACKAGE_VERSION" name version bin dist.integrity --json
+          INTEGRITY="$(node -p 'JSON.parse(require("fs").readFileSync(process.env.RUNNER_TEMP + "/simple-video-pack.json", "utf8"))[0].integrity')"
+          node scripts/verify-published.mjs "$PACKAGE_NAME" "$PACKAGE_VERSION" "$INTEGRITY"
           printf 'Published %s@%s under dist-tag %s\n' "$PACKAGE_NAME" "$PACKAGE_VERSION" "$DIST_TAG" >> "$GITHUB_STEP_SUMMARY"

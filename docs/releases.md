@@ -22,7 +22,15 @@ npm publish --access public --tag rc
 
 Use your own authenticated npm account with publishing access to the `simple-post` organization. Complete any browser/2FA step yourself; do not paste tokens into issues, shell commands or GitHub secrets. The one-time bootstrap uses `0.1.0-rc.0` under the `rc` dist-tag. After configuring trusted publishing below, promote to stable `0.1.0` and let the real release workflow publish it. This verifies OIDC without dummy versions or storing an npm token in GitHub.
 
-After the first publication, open the package's npm Settings → Trusted publishing and add a GitHub Actions publisher:
+After the first publication, configure the trusted publisher using npm's supported CLI (complete any npm browser/passkey prompt):
+
+```sh
+npm trust github @simple-post/video \
+  --repo=simple-post/simple-video --file=release.yml --allow-publish --yes
+npm trust list @simple-post/video --json
+```
+
+The equivalent npm Settings → Trusted publishing fields are:
 
 | Field             | Value                                                                  |
 | ----------------- | ---------------------------------------------------------------------- |
@@ -68,7 +76,7 @@ Keep the GitHub repository private unless a visibility change is explicitly requ
    git push origin "video-v$(node -p 'require("./package.json").version')"
    ```
 
-4. Inspect the **Release to npm** workflow. It validates metadata, ensures the tagged commit belongs to main, runs type/format/tests, checks the package allowlist, builds a tarball and publishes that exact tarball. The public registry is queried after publication.
+4. Inspect the **Release to npm** workflow. It validates metadata, ensures the tagged commit belongs to main, runs type/format/tests, checks the package allowlist, builds a tarball and publishes that exact tarball. The public registry is queried after publication with bounded retries for npm processing/propagation, and its integrity must match the tested tarball. Verification never repeats the publication.
 5. Verify installation from npm in a fresh directory and update examples/docs when behavior changes. A version on main is not proof that it has shipped.
 
 The runtime `--version` reads `package.json`, so it follows the published version automatically. Tags are immutable release identifiers. Never force-move a release tag or overwrite an npm version; fix forward with a new version if a published artifact is wrong.
