@@ -1,0 +1,82 @@
+name: Release to npm
+
+# Mirrors simple-post/core's sdk-v*/cli-v* release process.
+# video-v0.1.0 -> latest; video-v0.2.0-beta.1 -> beta.
+# Configure this exact repository and release.yml as an npm trusted publisher.
+on:
+  push:
+    tags:
+      - "video-v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'simple-post/simple-video'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ONNXRUNTIME_NODE_INSTALL: skip
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Pin npm for trusted publishing
+        # Match core; npm 12.0.0 lacks sigstore in its global distribution.
+        run: npm install -g npm@11.16.0
+      - name: Parse and validate release tag
+        id: release
+        run: node scripts/release.mjs "$GITHUB_REF_NAME"
+      - name: Verify tagged commit belongs to main
+        run: git merge-base --is-ancestor HEAD origin/main
+      - name: Install media tools
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ffmpeg fonts-liberation
+          fi
+      - name: Install dependencies
+        run: npm ci
+      - name: Check types and formatting
+        run: |
+          npm run check
+          npm run format:check
+      - name: Test CLI and release metadata
+        run: npm test
+      - name: Validate package contents
+        run: npm run check:package
+      - name: Build exact npm tarball
+        run: |
+          mkdir -p "$RUNNER_TEMP/simple-video-release"
+          npm pack --pack-destination "$RUNNER_TEMP/simple-video-release" --json > "$RUNNER_TEMP/simple-video-pack.json"
+      - name: Verify installed tarball and local render
+        run: |
+          TARBALL="$(node -p 'JSON.parse(require("fs").readFileSync(process.env.RUNNER_TEMP + "/simple-video-pack.json", "utf8"))[0].filename')"
+          node scripts/smoke-package.mjs "$RUNNER_TEMP/simple-video-release/$TARBALL"
+      - name: Publish via npm trusted publishing
+        env:
+          DIST_TAG: ${{ steps.release.outputs.dist_tag }}
+        run: |
+          TARBALL="$(node -p 'JSON.parse(require("fs").readFileSync(process.env.RUNNER_TEMP + "/simple-video-pack.json", "utf8"))[0].filename')"
+          npm publish "$RUNNER_TEMP/simple-video-release/$TARBALL" --access public --tag "$DIST_TAG"
+      - name: Verify published version
+        env:
+          PACKAGE_NAME: ${{ steps.release.outputs.name }}
+          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
+          DIST_TAG: ${{ steps.release.outputs.dist_tag }}
+        run: |
+          npm view "$PACKAGE_NAME@$PACKAGE_VERSION" name version bin dist.integrity --json
+          printf 'Published %s@%s under dist-tag %s\n' "$PACKAGE_NAME" "$PACKAGE_VERSION" "$DIST_TAG" >> "$GITHUB_STEP_SUMMARY"

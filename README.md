@@ -2,31 +2,47 @@
 
 Create short, captioned photo-parallax videos from your own images or AI-generated photos. Run the entire workflow from a terminal or an AI agent: plan, generate, animate, add music, validate, and export.
 
-**Private developer preview. Not published on npm.** The project is prepared for an open-source release; this repository remains private for now. No account, hosted service, VPS, or n8n installation is required. Image generation uses your own OpenAI API key. Local-photo rendering needs no API key.
+**Early release: `@simple-post/video`.** This repository remains private for now; the npm package is public. No account, hosted service, VPS, or n8n installation is required. Image generation uses your own OpenAI API key. Local-photo rendering needs no API key.
 
-## Quickstart from source
+## Install and make a video
 
-Install Node.js 24+ and FFmpeg/ffprobe (with libx264). On macOS: `brew install ffmpeg`. On Debian/Ubuntu: `sudo apt-get install ffmpeg fonts-liberation`.
+Requires Node.js 24+ and FFmpeg/ffprobe (with libx264). On macOS: `brew install ffmpeg`. On Debian/Ubuntu: `sudo apt-get install ffmpeg fonts-liberation`.
+
+```sh
+npm install -g @simple-post/video
+simple-video --version
+
+# Preview locations/downloads, then install isolated Python and DepthFlow.
+simple-video setup --dry-run
+simple-video setup
+simple-video doctor --check-render
+
+# A complete local demo, with original geometric sample photos. No paid API call.
+simple-video init ./my-video --template slideshow --local
+simple-video --project ./my-video plan
+simple-video --project ./my-video create --id first-video
+simple-video --project ./my-video export --run first-video --output ./review
+```
+
+Alternatively invoke the CLI without a global install:
+
+```sh
+npx --yes --package @simple-post/video simple-video --help
+```
+
+Open the exported MP4 to review it. Replace the sample photos with your own images, or generate photos below. Installing the npm package does not install Python or download the DepthFlow environment; run the explicit setup command once.
+
+For development from the private source checkout:
 
 ```sh
 git clone https://github.com/simple-post/simple-video.git
 cd simple-video
 ONNXRUNTIME_NODE_INSTALL=skip npm ci
 npm run build
-
-# Preview locations and downloads, then install the isolated renderer.
-node bin/run.js setup --dry-run
-node bin/run.js setup
-node bin/run.js doctor --check-render
-
-# Create a working demo from original geometric sample photos. No paid API call.
-node bin/run.js init ./my-video --template slideshow --local
-node bin/run.js --project ./my-video plan
-node bin/run.js --project ./my-video create --id first-video
-node bin/run.js --project ./my-video export --run first-video --output ./review
+node bin/run.js --help
 ```
 
-Open the exported MP4 to review it. Replace the sample photos with your own images, or use generated photos below. `npm link --ignore-scripts` optionally makes the `simple-video` command available while developing; all examples also work by replacing `simple-video` with `node /path/to/simple-video/bin/run.js`.
+`npm link --ignore-scripts` optionally makes the development command available. Source commands use `node bin/run.js` in place of `simple-video`.
 
 ## Generate photos with your own key
 
@@ -104,17 +120,19 @@ That command publishes immediately. Drafts and scheduling belong to SimplePost's
 
 The portable skill is in [skills/simple-video/SKILL.md](skills/simple-video/SKILL.md). Copy that folder into your agent's skill directory, or run `simple-video skill --output /path/to/skills/simple-video`. It explains schema discovery, generation authorization, safe resumption and render-only iteration. There is no dependency on a particular agent vendor.
 
-## Development and support
+## Development, releases and support
 
 ```sh
 npm ci
 npm test
 npm run check
 npm run format:check
-npm pack --dry-run
+npm run check:package
 ```
 
-Tests use mocks, original fixtures and local FFmpeg. They do not make paid generation requests. Native DepthFlow installation and rendering are a separate opt-in check. Apple Silicon macOS has been exercised with a fresh managed runtime and an actual GPU render; other graphics configurations need validation. See [setup and platform support](docs/setup.md), [architecture](docs/architecture.md), [contributing](CONTRIBUTING.md) and [security](SECURITY.md).
+Tests use mocks, original fixtures and local FFmpeg. They do not make paid generation requests. Native DepthFlow installation and rendering are a separate opt-in check. Apple Silicon macOS has been exercised with a fresh managed runtime and an actual GPU render; other graphics configurations need validation. Releases mirror `core`: push a matching `video-vVERSION` tag, then GitHub Actions checks/tests and publishes via OIDC. See [release instructions](docs/releases.md).
+
+See [setup and platform support](docs/setup.md), [architecture](docs/architecture.md), [contributing](CONTRIBUTING.md) and [security](SECURITY.md).
 
 ## License
 

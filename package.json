@@ -1,7 +1,6 @@
 {
-  "name": "@simple-post/simple-video",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@simple-post/video",
+  "version": "0.1.0-rc.0",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -16,7 +15,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepack": "npm run build",
-    "prepublishOnly": "node scripts/no-publish.mjs"
+    "check:package": "node scripts/check-package.mjs",
+    "release:check": "npm run check && npm run format:check && npm test && npm run check:package",
+    "smoke:package": "node scripts/smoke-package.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "4.3.0",
@@ -40,7 +41,8 @@
     "skills",
     "README.md",
     "LICENSE",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "CHANGELOG.md"
   ],
   "repository": {
     "type": "git",
@@ -49,5 +51,18 @@
   "bugs": {
     "url": "https://github.com/simple-post/simple-video/issues"
   },
-  "homepage": "https://github.com/simple-post/simple-video#readme"
+  "homepage": "https://github.com/simple-post/simple-video#readme",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "author": "SimplePost contributors",
+  "keywords": [
+    "cli",
+    "video",
+    "parallax",
+    "depthflow",
+    "slideshow",
+    "ai-agents"
+  ]
 }

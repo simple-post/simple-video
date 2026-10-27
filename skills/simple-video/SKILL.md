@@ -5,7 +5,7 @@ description: Create, re-render and export captioned photo-parallax videos with t
 
 # Simple Video
 
-Use the same non-interactive CLI as the user. Find `simple-video` on PATH; in a source checkout, use `node /path/to/simple-video/bin/run.js` after `npm ci` and `npm run build`. Every command emits a JSON result on stdout. Progress/errors use stderr; a nonzero exit means inspect the error before retrying. `--json --no-input` makes the automation contract explicit.
+Use the same non-interactive CLI as the user. The npm package is `@simple-post/video` and its binary is `simple-video`. Find it on PATH or invoke `npx --yes --package @simple-post/video simple-video`; in a source checkout, use `node /path/to/simple-video/bin/run.js` after `npm ci` and `npm run build`. Every command emits a JSON result on stdout. Progress/errors use stderr; a nonzero exit means inspect the error before retrying. `--json --no-input` makes the automation contract explicit.
 
 ## Discover and prepare
 

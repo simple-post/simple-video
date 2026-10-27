@@ -28,5 +28,5 @@ jobs:
       - run: npm test
       - run: npm run check
       - run: npm run format:check
-      - run: npm pack --dry-run
+      - run: npm run check:package
       - run: node bin/run.js setup --dry-run --json --no-input

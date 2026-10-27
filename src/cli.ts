@@ -1,5 +1,6 @@
 import { Command, CommanderError } from "commander";
 import { resolve, join } from "node:path";
+import { readFileSync } from "node:fs";
 import { readdir, cp } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -21,7 +22,11 @@ const program = new Command()
   .description(
     "Create photo-parallax videos. No prompts, browser login, or automatic publishing. JSON on stdout; progress on stderr.",
   )
-  .version("0.1.0")
+  .version(
+    JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ).version,
+  )
   .option("--project <directory>", "project directory", ".")
   .option(
     "--root <directory>",
