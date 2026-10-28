@@ -16,7 +16,8 @@ recipe JSON
 
 ## Boundaries
 
-- `cli.ts`: non-interactive commands, JSON results, progress and error handling.
+- `cli.ts`: commands, explicit setup approval, progress and error handling.
+- `terminal.ts`: readable terminal output, confirmation prompt and explicit JSON mode for automation.
 - `project.ts`: recipe-relative paths, project initialization and validated export.
 - `spec.ts`: public schema, generic templates and deterministic storyboard expansion.
 - `runner.ts`: persistent request state, budget reservations, uncertain-outcome handling, shared cache and run locking.

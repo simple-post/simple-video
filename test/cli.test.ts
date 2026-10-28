@@ -2,7 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +17,7 @@ import { SpecSchema, template, planExperiment } from "../src/spec.js";
 import { initProject, readRecipe } from "../src/project.js";
 import { LocalImages } from "../src/provider.js";
 import { uvArtifact, setup, runtimePaths } from "../src/runtime.js";
-import { hash } from "../src/io.js";
+import { CliError, hash } from "../src/io.js";
 
 const exec = promisify(execFile);
 const bin = fileURLToPath(new URL("../../bin/run.js", import.meta.url));
@@ -111,6 +118,165 @@ test("setup dry-run has no filesystem side effects and uses pinned bootstrap che
   } finally {
     if (old === undefined) delete process.env.SIMPLE_VIDEO_HOME;
     else process.env.SIMPLE_VIDEO_HOME = old;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("setup refuses unapproved downloads before creating its runtime directory", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "simple-video-setup-consent-")),
+    home = join(dir, "runtime"),
+    old = process.env.SIMPLE_VIDEO_HOME;
+  try {
+    process.env.SIMPLE_VIDEO_HOME = home;
+    await assert.rejects(setup({}), (e: unknown) => {
+      assert.ok(e instanceof CliError);
+      assert.equal(e.code, "CONFIRMATION_REQUIRED");
+      return true;
+    });
+    for (const flags of [
+      [],
+      ["--json"],
+      ["--no-input"],
+      ["--human", "--no-input"],
+      ["--quiet"],
+    ]) {
+      await assert.rejects(
+        cli(["--home", home, ...flags, "setup"]),
+        (e: unknown) => {
+          const error = e as { code: number; stdout: string; stderr: string };
+          assert.equal(error.code, 2);
+          assert.equal(error.stdout, "");
+          if (flags.includes("--human")) {
+            assert.match(error.stderr, /Install location:/);
+            assert.match(error.stderr, /approval/);
+            assert.doesNotMatch(error.stderr, /Continue with setup\?/);
+          } else {
+            const failure = JSON.parse(error.stderr);
+            assert.equal(failure.error.code, "CONFIRMATION_REQUIRED");
+            assert.equal(failure.error.details.executed, false);
+            assert.equal(failure.error.details.plan.paths.home, home);
+          }
+          return true;
+        },
+      );
+    }
+    await assert.rejects(access(home));
+    const preview = await cli([
+      "--home",
+      home,
+      "setup",
+      "--dry-run",
+      "--json",
+      "--no-input",
+    ]);
+    assert.equal(preview.data.executed, false);
+    await assert.rejects(access(home));
+  } finally {
+    if (old === undefined) delete process.env.SIMPLE_VIDEO_HOME;
+    else process.env.SIMPLE_VIDEO_HOME = old;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test(
+  "setup --yes is required to start an unattended installer; dry-run still wins",
+  { skip: process.platform === "win32" },
+  async () => {
+    const dir = await mkdtemp(join(tmpdir(), "simple-video-setup-yes-")),
+      marker = join(dir, "installer-started"),
+      uv = join(dir, "fake-uv");
+    try {
+      // Stop at uv's version check. No package installs or network calls occur.
+      await writeFile(
+        uv,
+        `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started'); process.exit(1);\n`,
+      );
+      await chmod(uv, 0o700);
+      const args = [
+        "--home",
+        join(dir, "runtime"),
+        "--json",
+        "--no-input",
+        "setup",
+        "--yes",
+        "--skip-model",
+        "--uv",
+        uv,
+      ];
+      const preview = await cli([...args, "--dry-run"]);
+      assert.equal(preview.data.executed, false);
+      await assert.rejects(access(marker));
+      await assert.rejects(cli(args), (e: unknown) => {
+        const error = e as { stderr: string };
+        const events = error.stderr
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line));
+        assert.equal(events[0].event, "progress");
+        assert.equal(events[0].step, "uv");
+        assert.equal(events.at(-1).ok, false);
+        assert.notEqual(events.at(-1).error.code, "CONFIRMATION_REQUIRED");
+        return true;
+      });
+      assert.equal(await readFile(marker, "utf8"), "started");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+test("readable output is available for humans and explicit JSON stays parseable", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "simple-video-output-"));
+  try {
+    const invoke = (args: string[]) =>
+      exec(process.execPath, [bin, ...args], {
+        env: { ...process.env, OPENAI_API_KEY: "" },
+        timeout: 60_000,
+      });
+    const initialized = await invoke(["--human", "init", dir, "--local"]);
+    assert.match(initialized.stdout, /Project created/);
+    assert.match(initialized.stdout, /simple-video\.json/);
+    assert.doesNotMatch(initialized.stdout, /"ok"/);
+    const plan = await invoke(["--human", "--project", dir, "plan"]);
+    assert.match(plan.stdout, /Paid image requests: 0/);
+    assert.doesNotMatch(plan.stdout, /\$3\.00/);
+    const piped = await cli(["--project", dir, "plan"]);
+    assert.equal(piped.ok, true);
+    const json = await cli(["--project", dir, "plan", "--json"]);
+    assert.equal(json.data.paidImageRequests, 0);
+    const preview = await invoke([
+      "--human",
+      "setup",
+      "--dry-run",
+      "--skip-model",
+    ]);
+    assert.match(preview.stdout, /deferred until the first parallax render/);
+    assert.match(preview.stdout, /Nothing was downloaded or installed/);
+    await assert.rejects(
+      invoke(["--human", "status", "--run", "../outside"]),
+      (e: unknown) => {
+        const error = e as { stderr: string };
+        assert.match(error.stderr, /^Error: Run ID/);
+        assert.doesNotMatch(error.stderr, /"ok"/);
+        return true;
+      },
+    );
+    await assert.rejects(invoke(["--human", "--json", "setup", "--dry-run"]));
+    const recipeFile = join(dir, "simple-video.json"),
+      invalid = JSON.parse(await readFile(recipeFile, "utf8"));
+    invalid.video.width = 0;
+    await writeFile(recipeFile, JSON.stringify(invalid));
+    await assert.rejects(
+      invoke(["--human", "--project", dir, "plan"]),
+      (e: unknown) => {
+        const error = e as { stderr: string };
+        assert.match(error.stderr, /Recipe validation failed/);
+        assert.match(error.stderr, /video\.width:/);
+        assert.doesNotMatch(error.stderr, /"code":/);
+        return true;
+      },
+    );
+  } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });

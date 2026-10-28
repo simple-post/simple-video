@@ -426,9 +426,11 @@ export async function runExperiment(
         clips.push(clip);
         await save();
       }
+      log({ stage: "assemble" });
       current.output = await assemble(clips, plan.duration, spec, runDir);
       current.status = "validating";
       await save();
+      log({ stage: "validate" });
       current.report = await validateMedia(current.output, spec, plan.duration);
       await contactSheet(current.output, plan.duration, runDir);
       await writeJson(resolve(runDir, "simplepost-preparation.json"), {

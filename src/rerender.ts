@@ -102,7 +102,9 @@ export async function rerender(
         ),
       );
     }
+    options.log?.({ stage: "assemble" });
     const output = await assemble(clips, run.plan.duration, spec, variantDir);
+    options.log?.({ stage: "validate" });
     const report = await validateMedia(output, spec, run.plan.duration);
     await contactSheet(output, run.plan.duration, variantDir);
     const result = {

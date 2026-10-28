@@ -5,14 +5,14 @@ description: Create, re-render and export captioned photo-parallax videos with t
 
 # Simple Video
 
-Use the same non-interactive CLI as the user. The npm package is `@simple-post/video` and its binary is `simple-video`. Find it on PATH or invoke `npx --yes --package @simple-post/video simple-video`; in a source checkout, use `node /path/to/simple-video/bin/run.js` after `npm ci` and `npm run build`. Every command emits a JSON result on stdout. Progress/errors use stderr; a nonzero exit means inspect the error before retrying. `--json --no-input` makes the automation contract explicit.
+Use the same CLI as the user, with `--json --no-input` for automation. The npm package is `@simple-post/video` and its binary is `simple-video`. Find it on PATH or invoke `npx --yes --package @simple-post/video simple-video`; in a source checkout, use `node /path/to/simple-video/bin/run.js` after `npm ci` and `npm run build`. In JSON mode successful commands emit one result on stdout. Progress/errors use stderr; a nonzero exit means inspect the error before retrying. Terminals otherwise default to readable text. Help and version remain plain text.
 
 ## Discover and prepare
 
 - Run `--help`, `COMMAND --help`, and `schema` when flags or recipe fields are uncertain. The schema is in the JSON response's `data` property. Do not invent command flags or send arbitrary SimplePost API payloads to this CLI.
 - Select `--project DIR` consistently; all photos, audio and keys belong to that project/user. The default recipe is `DIR/simple-video.json`. Recipe-relative file paths work from any invocation directory.
 - `init DIR --template slideshow --local` creates original sample artwork without paid generation. Templates are `slideshow`, `comparison`, `single` and `challenge`.
-- `doctor` checks dependencies and key presence. `setup --dry-run` describes downloads; `setup` installs a managed Python/DepthFlow environment and local depth weights. `doctor --check-render` checks actual GPU rendering without a paid API call. `--home` consistently selects a nondefault runtime.
+- `doctor` checks dependencies and key presence. `setup --dry-run --json --no-input` describes downloads, sizes and locations without changes. When runtime installation is within the user's authorized scope, use `setup --yes --json --no-input` to install managed Python/DepthFlow and local depth weights. Setup without `--yes` returns `CONFIRMATION_REQUIRED` in automation; it must not hang or implicitly approve. `--yes` authorizes runtime setup only, not paid generation. `doctor --check-render` checks actual GPU rendering without a paid API call. `--home` consistently selects a nondefault runtime.
 - The user supplies their own `OPENAI_API_KEY` through environment variables or an explicit `--env-file`. Do not look for keys in unrelated projects or print them. Local photos need no key.
 
 ## Make and iterate

@@ -1,11 +1,11 @@
-import { Command, CommanderError } from "commander";
+import { Command, CommanderError, Option } from "commander";
 import { resolve, join } from "node:path";
 import { readFileSync } from "node:fs";
 import { readdir, cp } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { SpecSchema, planExperiment } from "./spec.js";
-import { command, readJson, safeError, safeId } from "./io.js";
+import { CliError, command, readJson, safeError, safeId } from "./io.js";
 import { runExperiment, requestTotals, type Run } from "./runner.js";
 import {
   LocalImages,
@@ -15,12 +15,24 @@ import {
 } from "./provider.js";
 import { rerender } from "./rerender.js";
 import { initProject, readRecipe, recipePlan, exportRun } from "./project.js";
-import { runtimePaths, setup, probeGraphics, exists } from "./runtime.js";
+import {
+  runtimePaths,
+  setup,
+  setupPlan,
+  probeGraphics,
+  exists,
+} from "./runtime.js";
+import {
+  Terminal,
+  canConfirm,
+  confirmSetup,
+  setupPreview,
+} from "./terminal.js";
 
 const program = new Command()
   .name("simple-video")
   .description(
-    "Create photo-parallax videos. No prompts, browser login, or automatic publishing. JSON on stdout; progress on stderr.",
+    "Create photo-parallax videos. Readable terminal output; use --json for automation. Setup asks before installing. No automatic publishing.",
   )
   .version(
     JSON.parse(
@@ -40,14 +52,16 @@ const program = new Command()
     "--env-file <path>",
     "read your credentials from this file; never copies them",
   )
-  .option(
-    "--json",
-    "explicitly request machine-readable JSON (also the default)",
+  .addOption(
+    new Option(
+      "--json",
+      "machine-readable results and progress; never prompt",
+    ).conflicts("human"),
   )
-  .option(
-    "--no-input",
-    "never prompt (all commands already run non-interactively)",
+  .addOption(
+    new Option("--human", "readable output even when piped").conflicts("json"),
   )
+  .option("--no-input", "never prompt; unattended setup also requires --yes")
   .option("--quiet", "suppress progress events on stderr");
 program.exitOverride().configureOutput({ writeErr: () => {} });
 const opts = () =>
@@ -57,26 +71,18 @@ const opts = () =>
     home?: string;
     envFile?: string;
     quiet?: boolean;
+    json?: boolean;
+    human?: boolean;
+    input?: boolean;
   }>();
 const project = () => resolve(opts().project);
 const root = () => resolve(opts().root ?? join(project(), ".simple-video"));
 const recipe = (path?: string) =>
   resolve(project(), path ?? "simple-video.json");
-const log = (event: unknown) => {
-  if (!opts().quiet)
-    process.stderr.write(
-      JSON.stringify({ event: "progress", ...(event as object) }) + "\n",
-    );
-};
-const result = (data: unknown): void => {
-  process.stdout.write(
-    JSON.stringify(
-      { ok: true, command: program.args[0] ?? "help", data },
-      null,
-      2,
-    ) + "\n",
-  );
-};
+const terminal = new Terminal(opts);
+const log = (event: unknown) => terminal.log(event);
+const result = (data: unknown): void =>
+  terminal.result(program.args[0] ?? "help", data);
 const number = (value: string) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) throw new Error("Expected a finite number");
@@ -130,16 +136,39 @@ program
 program
   .command("setup")
   .description(
-    "Install isolated Python and DepthFlow; downloads model weights unless --skip-model. Does not install system GPU drivers or FFmpeg.",
+    "Review downloads/locations and confirm before installing isolated Python, DepthFlow and model weights. Use --yes for unattended setup.",
   )
   .option(
     "--dry-run",
     "print exact downloads and locations without changing anything",
   )
   .option("--skip-model", "defer depth-model download until the first render")
+  .option("-y, --yes", "approve the displayed setup plan without prompting")
   .option("--uv <executable>", "use an existing uv instead of downloading it")
   .option("--python <version>", "managed Python version", "3.12")
-  .action(async (o) => result(await setup({ ...o, log })));
+  .action(async (o) => {
+    const plan = setupPlan(o);
+    let approved = Boolean(o.yes);
+    if (!o.dryRun && !terminal.json)
+      process.stderr.write(setupPreview(plan) + "\n");
+    if (
+      !o.dryRun &&
+      !approved &&
+      canConfirm(
+        opts(),
+        terminal.json,
+        Boolean(process.stdin.isTTY),
+        Boolean(process.stderr.isTTY),
+      )
+    ) {
+      approved = await confirmSetup();
+      if (!approved) {
+        result({ ...plan, executed: false, cancelled: true });
+        return;
+      }
+    }
+    result(await setup({ ...o, approved, log }));
+  });
 
 program
   .command("doctor")
@@ -402,28 +431,28 @@ else {
         const secret = process.env[key];
         if (secret) message = message.replaceAll(secret, "[REDACTED]");
       }
-      process.stderr.write(
-        JSON.stringify({
-          ok: false,
-          error: {
-            code,
-            message,
-            ...(error instanceof z.ZodError
-              ? {
-                  issues: error.issues.map(({ path, message }) => ({
-                    path,
-                    message,
-                  })),
-                }
-              : {}),
-          },
-        }) + "\n",
-      );
+      terminal.error({
+        code,
+        message,
+        ...(error instanceof CliError && error.details
+          ? { details: error.details }
+          : {}),
+        ...(error instanceof z.ZodError
+          ? {
+              issues: error.issues.map(({ path, message }) => ({
+                path,
+                message,
+              })),
+            }
+          : {}),
+      });
       process.exitCode = exitCode;
     }
   }
 }
 function classifyError(error: unknown) {
+  if (error instanceof CliError)
+    return { code: error.code, exitCode: error.exitCode };
   const text = String(error);
   if (error instanceof CommanderError || error instanceof z.ZodError)
     return { code: "INVALID_INPUT", exitCode: 2 };

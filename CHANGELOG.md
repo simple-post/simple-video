@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Setup explains downloads, installation locations and potential disk use, then asks for confirmation with a default of No. Unattended installs require explicit `--yes`; `--dry-run` always makes no changes.
+- Readable terminal progress, elapsed-time updates, actionable errors and result summaries. `--json --no-input` preserves machine-readable automation; piped stdout defaults to JSON and `--human` forces text.
+
 ## 0.1.0
 
 - Non-interactive `simple-video` CLI with JSON results, planning, resumable image generation, local-photo import and export.
