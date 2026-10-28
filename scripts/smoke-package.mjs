@@ -24,6 +24,7 @@ const env = {
   OPENAI_API_KEY: "",
   ONNXRUNTIME_NODE_INSTALL: "skip",
   SIMPLE_VIDEO_HOME: join(directory, "runtime"),
+  SIMPLE_VIDEO_CONFIG_DIR: join(directory, "config"),
   npm_config_cache: join(directory, "npm-cache"),
 };
 try {
@@ -58,6 +59,19 @@ try {
       encoding: "utf8",
     });
   assert.equal(invoke(["--version"]).trim(), expected.version);
+  const described = join(directory, "described");
+  const prompt = "A red fox sleeping on a mossy log beside a mountain lake";
+  invoke(["init", described, "--prompt", prompt]);
+  const preview = JSON.parse(
+    invoke(["--project", described, "plan", "--json", "--no-input"]),
+  );
+  assert.equal(preview.data.descriptions[0].prompt, prompt);
+  assert.equal(preview.data.paidImageRequests, 1);
+  assert.equal(
+    JSON.parse(invoke(["auth", "status", "--json", "--no-input"])).data
+      .configured,
+    false,
+  );
   const project = join(directory, "project");
   invoke(["init", project, "--template", "single", "--local"]);
   const recipeFile = join(project, "simple-video.json");

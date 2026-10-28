@@ -32,6 +32,7 @@ for (const expected of [
   "dist/cli.js",
   "dist/runtime.js",
   "dist/terminal.js",
+  "dist/auth.js",
   "dist/provider.js",
   "README.md",
   "LICENSE",
@@ -45,7 +46,7 @@ for (const expected of [
   );
 for (const path of paths) {
   assert.ok(
-    !/(^|\/)(?:\.env(?:\..*)?|\.npmrc|\.git|\.simple-video|node_modules|dist-test|test)(?:\/|$)/.test(
+    !/(^|\/)(?:\.env(?:\..*)?|\.npmrc|credentials\.json|\.git|\.simple-video|node_modules|dist-test|test)(?:\/|$)/.test(
       path,
     ),
     `Private/development file packed: ${path}`,

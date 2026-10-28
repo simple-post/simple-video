@@ -1,6 +1,6 @@
 # Recipes, photos and audio
 
-Run `simple-video schema` for the strict schema (`data` in the JSON response). Unknown properties fail validation. `init` supplies a complete editable recipe; `plan` expands it into exact images and scenes without network requests.
+Run `simple-video schema --json` for the strict schema (`data` in the JSON response). Unknown properties fail validation. `init --prompt "Your image description"` creates a single-photo recipe; repeat `--prompt` with `--template slideshow` for multiple images. `plan` shows the descriptions and expands them into exact images and scenes without network requests. Use `init --example --template slideshow` when you deliberately want preset descriptions to edit.
 
 ## Slideshow example
 
@@ -61,7 +61,7 @@ DepthFlow's `parallaxIntensity` controls the amount of travel over the entire sh
 
 ## Comparison template
 
-`init --template comparison` creates a fictional matchup. It has a fixed hero, increasing challenger counts, split-screen comparison images and full-frame outcome images. With `winnerPattern: "final-flip"`, the schema requires one side to win every round except the final one. Each round has `count` and `winner` (`hero` or `opponent`). `compareDuration` and `revealDuration` control segment length; the template uses 1.5 seconds each. These are fictional outcomes, not factual simulations.
+`init --template comparison --hero "A T. rex" --opponent "woolly mammoths" --setting "An open snowy valley"` creates a fictional matchup. It has a fixed hero, increasing challenger counts, split-screen comparison images and full-frame outcome images. With `winnerPattern: "final-flip"`, the schema requires one side to win every round except the final one. Each round has `count` and `winner` (`hero` or `opponent`). `compareDuration` and `revealDuration` control segment length; the template uses 1.5 seconds each. These are fictional outcomes, not factual simulations.
 
 Override `heroPrompt`, `opponentLook`, individual `opponentPrompt` or `revealPrompt` for precise compositions. A new run ID can reuse image requests that have not changed.
 

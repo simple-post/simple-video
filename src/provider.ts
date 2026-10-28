@@ -69,7 +69,7 @@ export class OpenAIImages implements ImageProvider {
     const key = process.env.OPENAI_API_KEY;
     if (!key)
       throw new ProviderError(
-        "OPENAI_API_KEY is missing; use --env-file or your process environment",
+        "OpenAI API key is missing; run simple-video auth login, or use --env-file / OPENAI_API_KEY",
         false,
       );
     const parameters = {

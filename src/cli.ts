@@ -14,7 +14,21 @@ import {
   loadEnv,
 } from "./provider.js";
 import { rerender } from "./rerender.js";
-import { initProject, readRecipe, recipePlan, exportRun } from "./project.js";
+import {
+  initProject,
+  readRecipe,
+  recipePlan,
+  exportRun,
+  type InitContent,
+} from "./project.js";
+import {
+  credentialsPath,
+  saveKey,
+  keyStatus,
+  loadSavedKey,
+  logout,
+  keyFromStdin,
+} from "./auth.js";
 import {
   runtimePaths,
   setup,
@@ -27,6 +41,7 @@ import {
   canConfirm,
   confirmSetup,
   setupPreview,
+  askText,
 } from "./terminal.js";
 
 const program = new Command()
@@ -52,6 +67,10 @@ const program = new Command()
     "--env-file <path>",
     "read your credentials from this file; never copies them",
   )
+  .option(
+    "--config-dir <directory>",
+    "saved-login directory (or SIMPLE_VIDEO_CONFIG_DIR)",
+  )
   .addOption(
     new Option(
       "--json",
@@ -70,6 +89,7 @@ const opts = () =>
     root?: string;
     home?: string;
     envFile?: string;
+    configDir?: string;
     quiet?: boolean;
     json?: boolean;
     human?: boolean;
@@ -82,7 +102,12 @@ const recipe = (path?: string) =>
 const terminal = new Terminal(opts);
 const log = (event: unknown) => terminal.log(event);
 const result = (data: unknown): void =>
-  terminal.result(program.args[0] ?? "help", data);
+  terminal.result(
+    program.args[0] === "auth"
+      ? program.args.slice(0, 2).join(" ")
+      : (program.args[0] ?? "help"),
+    data,
+  );
 const number = (value: string) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) throw new Error("Expected a finite number");
@@ -101,19 +126,115 @@ const summary = (r: Run) => ({
 async function configure() {
   if (opts().home) process.env.SIMPLE_VIDEO_HOME = resolve(opts().home!);
   if (opts().envFile) await loadEnv(resolve(opts().envFile!));
+  if (opts().configDir)
+    process.env.SIMPLE_VIDEO_CONFIG_DIR = resolve(opts().configDir!);
 }
 program.hook("preAction", configure);
+const interactive = () =>
+  canConfirm(
+    opts(),
+    terminal.json,
+    Boolean(process.stdin.isTTY),
+    Boolean(process.stderr.isTTY),
+  );
+const collect = (value: string, previous: string[]) => [...previous, value];
+
+const auth = program
+  .command("auth")
+  .description(
+    "Save an OpenAI key once for this computer; inspect or remove the saved login",
+  );
+auth
+  .command("login")
+  .description(
+    "Paste a hidden key, or import it explicitly from stdin/environment; no API request",
+  )
+  .addOption(
+    new Option(
+      "--stdin",
+      "read the key from piped stdin, never a command-line argument",
+    ).conflicts("fromEnv"),
+  )
+  .addOption(
+    new Option(
+      "--from-env",
+      "save OPENAI_API_KEY from the environment or explicit --env-file",
+    ).conflicts("stdin"),
+  )
+  .action(async (o) => {
+    let key: string;
+    if (o.stdin) {
+      if (process.stdin.isTTY)
+        throw new CliError(
+          "INVALID_INPUT",
+          2,
+          "--stdin needs piped input. Run auth login without flags for a hidden prompt.",
+        );
+      key = await keyFromStdin();
+    } else if (o.fromEnv) {
+      key = process.env.OPENAI_API_KEY ?? "";
+    } else {
+      if (!interactive())
+        throw new CliError(
+          "INPUT_REQUIRED",
+          2,
+          "Run simple-video auth login in a terminal to paste your key privately, or use --from-env / --stdin for automation.",
+        );
+      process.stderr.write(
+        `Save your OpenAI API key once for Simple Video.\n  Location: ${credentialsPath()}\n  Stored unencrypted in a private local file (0600 on Unix).\n  It is reused across projects. No API request is made.\n  Create a key in your OpenAI Platform dashboard if needed.\n\n`,
+      );
+      key = await askText("OpenAI API key (hidden): ", true);
+    }
+    result(await saveKey(key));
+  });
+auth
+  .command("status")
+  .description("Show credential source and location, never the key")
+  .action(async () => result(await keyStatus(opts().envFile)));
+auth
+  .command("logout")
+  .description(
+    "Remove the saved local key; leave environment/env files unchanged",
+  )
+  .action(async () => result(await logout()));
 
 program
   .command("init")
   .description(
-    "Create a project recipe and credential example; makes no API calls",
+    "Describe your photos and create an editable recipe; makes no API calls",
   )
   .argument("[directory]", "destination (default: --project)")
   .option(
     "--template <name>",
-    "slideshow, comparison, single or challenge",
-    "slideshow",
+    "single (default), slideshow, comparison or challenge",
+  )
+  .option(
+    "--prompt <text>",
+    "describe a photo; repeat for each slideshow/challenge photo",
+    collect,
+    [],
+  )
+  .option(
+    "--caption <text>",
+    "optional on-screen text; repeat once per photo",
+    collect,
+    [],
+  )
+  .option(
+    "--duration <seconds>",
+    "seconds per photo (single: 6; slideshow/challenge: 3)",
+    number,
+  )
+  .option("--name <text>", "project title")
+  .option("--hero <text>", "comparison: fixed side, such as a T. rex")
+  .option(
+    "--opponent <text>",
+    "comparison: challengers, such as woolly mammoths",
+  )
+  .option("--setting <text>", "comparison: where the matchup takes place")
+  .option(
+    "--example",
+    "write an editable example with preset image descriptions; do not generate",
   )
   .option(
     "--local",
@@ -126,12 +247,60 @@ program
       single: "loop",
       challenge: "challenge",
     } as const;
-    const type = types[o.template as keyof typeof types];
+    const type = types[(o.template ?? "single") as keyof typeof types];
     if (!type)
       throw Error(
         "Unknown template; use slideshow, comparison, single or challenge",
       );
-    result(await initProject(dir ?? project(), type, o.local));
+    const content: InitContent = {
+      prompts: o.prompt,
+      captions: o.caption,
+      duration: o.duration,
+      name: o.name,
+      hero: o.hero,
+      opponent: o.opponent,
+      setting: o.setting,
+    };
+    if (!o.local && !o.example) {
+      if (type === "battle") {
+        for (const [field, label] of [
+          ["hero", "Who is the fixed side? "],
+          ["opponent", "Who are the challengers? "],
+          ["setting", "Where does the matchup take place? "],
+        ] as const) {
+          if (!content[field]) {
+            if (!interactive())
+              throw new CliError(
+                "INPUT_REQUIRED",
+                2,
+                "Comparisons need --hero, --opponent and --setting, or --example to edit a starter recipe.",
+              );
+            content[field] = await askText(label);
+          }
+        }
+      } else if (!content.prompts?.length) {
+        if (!interactive())
+          throw new CliError(
+            "INPUT_REQUIRED",
+            2,
+            "Describe the image with --prompt. Repeat --prompt for a slideshow; use --local for geometric demo photos, or --example for an editable starter.",
+          );
+        const count = type === "loop" ? 1 : 3;
+        process.stderr.write(
+          "Describe what each photo should show. This only saves the recipe.\n",
+        );
+        content.prompts = [];
+        for (let i = 0; i < count; i++)
+          content.prompts.push(
+            await askText(
+              count === 1
+                ? "What image would you like? "
+                : `Photo ${i + 1} of ${count}: `,
+            ),
+          );
+      }
+    }
+    result(await initProject(dir ?? project(), type, o.local, content));
   });
 program
   .command("setup")
@@ -181,6 +350,7 @@ program
   )
   .option("--depth", "load/download and test the local depth model")
   .action(async (o) => {
+    const auth = await keyStatus(opts().envFile);
     const paths = runtimePaths();
     const checks = await Promise.all(
       ["ffmpeg", "ffprobe"].map(async (name) => ({
@@ -207,7 +377,8 @@ program
       graphics,
       paths,
       root: root(),
-      openaiKeyPresent: Boolean(process.env.OPENAI_API_KEY),
+      openaiKeyPresent: auth.configured,
+      authentication: auth,
       publishing: false,
       hint: ready
         ? "Use doctor --check-render to verify GPU rendering"
@@ -268,14 +439,15 @@ program
         provider: name,
         next:
           name === "openai"
-            ? "Supply your own OPENAI_API_KEY and add --execute to authorize generation"
+            ? "Run simple-video auth login once (or use OPENAI_API_KEY / --env-file), then add --execute to authorize generation"
             : "Omit --dry-run to render",
       });
       return;
     }
+    if (name === "openai") await loadSavedKey();
     if (name === "openai" && !process.env.OPENAI_API_KEY)
       throw Error(
-        "OPENAI_API_KEY is missing. Supply your own key through the environment or --env-file; no credentials are bundled.",
+        "OpenAI API key is missing. Run simple-video auth login once, or supply OPENAI_API_KEY through the environment or --env-file.",
       );
     const provider =
       name === "local"

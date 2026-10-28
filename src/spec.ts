@@ -6,10 +6,11 @@ import {
 } from "./soundtrack.js";
 
 const text = z.string().trim().min(1).max(300);
+const captionText = z.string().trim().max(300);
 const shot = z
   .object({
     prompt: z.string().trim().min(10).max(4000),
-    caption: text,
+    caption: captionText,
     duration: z.number().min(0.5).max(15),
     captionPosition: z.enum(["top", "bottom"]).optional(),
     referencePrevious: z.boolean().optional(),
@@ -61,7 +62,7 @@ export const SpecSchema = z
         ...common,
         type: z.literal("loop"),
         prompt: z.string().trim().min(10).max(4000),
-        caption: text,
+        caption: captionText,
         duration: z.number().min(2).max(30).default(12),
       })
       .strict(),

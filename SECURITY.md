@@ -2,7 +2,7 @@
 
 Report vulnerabilities privately to the repository maintainers using GitHub's private reporting when available, or a private maintainer channel. Do not include secrets in public issues.
 
-The CLI runs trusted local recipes and can read the images/audio explicitly named by them. It is not a sandbox for untrusted multi-tenant input. Keep your API keys in environment variables or an ignored env file selected with `--env-file`; there are no API-key command-line flags. Never commit keys, raw responses, runtime files or private media.
+The CLI runs trusted local recipes and can read the images/audio explicitly named by them. It is not a sandbox for untrusted multi-tenant input. `auth login` uses hidden input to save your key in a private, unencrypted user-level config file outside projects. Unix directory/file permissions must be `0700`/`0600`, ownership is checked, and symlink stores are rejected; Windows relies on user-directory ACLs. Environment variables and explicit `--env-file` override saved keys. `--stdin` and `--from-env` are explicit non-interactive imports; there are no key-value command-line flags. Authentication commands do not contact the provider. Never commit keys, raw responses, runtime files or private media.
 
 Paid image generation requires `--execute`. Request caps and estimate reservations are enforced, but the provider controls actual billing. Uncertain requests stop for inspection. Do not automatically retry them with the override flag.
 

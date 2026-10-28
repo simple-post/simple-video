@@ -1,5 +1,5 @@
 import { createInterface } from "node:readline";
-import type { Readable, Writable } from "node:stream";
+import { Writable, type Readable } from "node:stream";
 import type { setupPlan } from "./runtime.js";
 import { CliError } from "./io.js";
 
@@ -74,6 +74,44 @@ export async function confirmSetup(
   }
 }
 
+export async function askText(
+  label: string,
+  hidden = false,
+  input: Readable = process.stdin,
+  output: Writable = process.stderr,
+): Promise<string> {
+  const muted = hidden
+    ? new Writable({
+        write(_chunk, _encoding, done) {
+          done();
+        },
+      })
+    : undefined;
+  const rl = createInterface({
+    input,
+    output: muted ?? output,
+    terminal: hidden,
+  });
+  try {
+    output.write(label);
+    return await new Promise<string>((resolve, reject) => {
+      rl.once("close", () =>
+        reject(new CliError("CANCELLED", 130, "Cancelled. Nothing was saved.")),
+      );
+      rl.once("SIGINT", () =>
+        reject(new CliError("CANCELLED", 130, "Cancelled. Nothing was saved.")),
+      );
+      rl.question("", (answer) => resolve(answer.trim()));
+    });
+  } finally {
+    rl.close();
+    if (hidden) {
+      output.write("\n");
+      muted?.destroy();
+    }
+  }
+}
+
 const seconds = (ms: number) =>
   ms < 1000 ? "<1s" : `${Math.round(ms / 1000)}s`;
 const setupSteps: Record<string, string> = {
@@ -109,6 +147,14 @@ export function progressText(event: Fields): string | undefined {
 }
 
 export function resultText(command: string, data: any): string {
+  if (command === "auth login")
+    return `OpenAI key saved for Simple Video.\n  Location: ${data.path}\n  Storage: private local file, unencrypted (0600 on Unix).\n\nYou can now generate images in any project. No API request was made.`;
+  if (command === "auth status")
+    return data.configured
+      ? `OpenAI key configured.\n  Source: ${data.source}${data.path ? `\n  Location: ${data.path}` : ""}\n  No provider validation request was made.`
+      : "No OpenAI key configured. Run simple-video auth login. Local photos need no key.";
+  if (command === "auth logout")
+    return `${data.removed ? "Saved key removed." : "No saved key to remove."}\n${data.note}`;
   if (command === "setup") {
     if (data.cancelled) return "Setup cancelled. Nothing was installed.";
     if (!data.executed)
@@ -116,7 +162,7 @@ export function resultText(command: string, data: any): string {
     return `Setup complete.\n  Runtime: ${data.paths.home}\n\nNext: ${data.next}`;
   }
   if (command === "init")
-    return `Project created.\n  Folder: ${data.directory}\n  Recipe: ${data.recipe}\n  Photos: ${data.local ? "local demo artwork; no API key needed" : "AI generation; provide your own OPENAI_API_KEY"}\n\nNext: ${data.next}`;
+    return `Project created.\n  Folder: ${data.directory}\n  Recipe: ${data.recipe}\n  Photos: ${data.local ? "local demo artwork; no API key needed" : "AI generation; use auth login once"}${data.local ? "" : `\n\nImage descriptions (${data.promptLocation} in simple-video.json):\n${(data.descriptions ?? []).map((d: Fields) => `  ${d.id}: ${d.prompt}`).join("\n")}`}\n\nNext: ${data.next}`;
   if (command === "plan" || (command === "create" && data.executed === false)) {
     const rows = [
       data.name,
@@ -131,6 +177,13 @@ export function resultText(command: string, data: any): string {
     rows.push(
       `  Budget: ${data.budgetFits ? "within recipe limits" : "EXCEEDS recipe limits"}`,
       `  Photo IDs: ${data.assetIds.join(", ")}`,
+      ...(data.descriptions?.length
+        ? [
+            "",
+            "Image descriptions:",
+            ...data.descriptions.map((d: Fields) => `  ${d.id}: ${d.prompt}`),
+          ]
+        : []),
       "",
       data.next ?? "Review the recipe before running create.",
     );
@@ -151,7 +204,7 @@ export function resultText(command: string, data: any): string {
       );
     rows.push(
       `  Runtime: ${data.paths.home}`,
-      `  OpenAI key: ${data.openaiKeyPresent ? "configured" : "not set; not needed for local photos"}`,
+      `  OpenAI key: ${data.openaiKeyPresent ? `configured (${data.authentication?.source ?? "environment"})` : "not set; run simple-video auth login for AI images"}`,
       "",
       data.hint,
     );

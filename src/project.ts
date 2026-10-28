@@ -2,7 +2,7 @@ import { dirname, resolve, join } from "node:path";
 import { mkdir, copyFile, writeFile, access } from "node:fs/promises";
 import sharp from "sharp";
 import { SpecSchema, planExperiment, template, type Spec } from "./spec.js";
-import { readJson, writeJson, safeId, fileHash } from "./io.js";
+import { CliError, readJson, writeJson, safeId, fileHash } from "./io.js";
 import { type Run } from "./runner.js";
 
 export async function readRecipe(file: string): Promise<Spec> {
@@ -28,6 +28,7 @@ export function recipePlan(spec: Spec) {
     paidImageRequests: spec.image.files ? 0 : plan.assets.length,
     assetIds: plan.assets.map((a) => a.id),
     imageModel: spec.image.model,
+    descriptions: describeImages(spec),
     budget: spec.budget,
     estimatedUsd: spec.image.files
       ? 0
@@ -40,10 +41,109 @@ export function recipePlan(spec: Spec) {
     note: "Estimates are user-supplied reservations, not provider-enforced spending limits or an invoice. No API call has been made.",
   };
 }
+export function describeImages(spec: Spec) {
+  if (spec.type === "loop") return [{ id: "loop", prompt: spec.prompt }];
+  if (spec.type === "battle")
+    return [
+      { id: "hero", prompt: spec.heroPrompt ?? spec.hero },
+      { id: "challengers", prompt: spec.opponent },
+      { id: "setting", prompt: spec.environment },
+    ];
+  return spec.shots.map((shot, i) => ({
+    id: `shot-${i}`,
+    prompt: shot.prompt,
+  }));
+}
+export type InitContent = {
+  prompts?: string[];
+  captions?: string[];
+  duration?: number;
+  name?: string;
+  hero?: string;
+  opponent?: string;
+  setting?: string;
+};
+export function customizeTemplate(
+  type: Spec["type"],
+  content: InitContent,
+): Spec {
+  const spec = template(type),
+    prompts = content.prompts ?? [],
+    captions = content.captions ?? [];
+  if (content.name !== undefined) spec.name = content.name;
+  if (spec.type === "battle") {
+    if (prompts.length || captions.length || content.duration !== undefined)
+      throw new CliError(
+        "INVALID_INPUT",
+        2,
+        "Comparisons use --hero, --opponent and --setting. Edit rounds and timing in simple-video.json.",
+      );
+    if (content.hero !== undefined) spec.hero = content.hero;
+    if (content.opponent !== undefined) spec.opponent = content.opponent;
+    if (content.setting !== undefined) spec.environment = content.setting;
+  } else {
+    if (content.hero || content.opponent || content.setting)
+      throw new CliError(
+        "INVALID_INPUT",
+        2,
+        "--hero, --opponent and --setting are only for --template comparison.",
+      );
+    if (spec.type === "loop") {
+      if (prompts.length > 1 || captions.length > 1)
+        throw new CliError(
+          "INVALID_INPUT",
+          2,
+          "A single-photo video takes exactly one --prompt and at most one --caption.",
+        );
+      if (prompts.length) {
+        spec.prompt = prompts[0]!;
+        spec.caption = captions[0] ?? "";
+      } else if (captions.length) spec.caption = captions[0]!;
+      if (content.duration !== undefined) spec.duration = content.duration;
+    } else {
+      if (prompts.length) {
+        if (prompts.length < 2 || prompts.length > 12)
+          throw new CliError(
+            "INVALID_INPUT",
+            2,
+            "Slideshows and challenges need 2–12 --prompt flags, one per photo.",
+          );
+        if (captions.length && captions.length !== prompts.length)
+          throw new CliError(
+            "INVALID_INPUT",
+            2,
+            "Provide one --caption per --prompt, or omit captions.",
+          );
+        spec.shots = prompts.map((prompt, i) => ({
+          prompt,
+          caption: captions[i] ?? "",
+          duration: content.duration ?? 3,
+          ...(i ? { referencePrevious: true } : {}),
+        }));
+        if (spec.type === "story")
+          spec.character =
+            "Use the subjects described in each shot, preserving continuity where relevant.";
+        else spec.question = content.name ?? "What happens next?";
+        spec.budget.maxRequests = prompts.length;
+        spec.budget.maxEstimatedUsd =
+          prompts.length * spec.budget.estimatePerImageUsd;
+      } else if (captions.length || content.duration !== undefined)
+        throw new CliError(
+          "INVALID_INPUT",
+          2,
+          "Supply --prompt flags before changing slideshow captions or duration.",
+        );
+    }
+  }
+  if (prompts.length || content.hero || content.opponent)
+    spec.name = content.name ?? "My video";
+  return SpecSchema.parse(spec);
+}
 export async function initProject(
   directory: string,
   type: Spec["type"],
   local = false,
+  content: InitContent = {},
 ) {
   const dir = resolve(directory),
     recipe = join(dir, "simple-video.json");
@@ -56,8 +156,20 @@ export async function initProject(
     throw Error(
       "Project already contains simple-video.json; choose another folder",
     );
+  if (
+    local &&
+    (content.prompts?.length ||
+      content.hero ||
+      content.opponent ||
+      content.setting)
+  )
+    throw new CliError(
+      "INVALID_INPUT",
+      2,
+      "--local creates geometric demo artwork; omit it to use your image descriptions.",
+    );
+  const spec = customizeTemplate(type, content);
   await mkdir(dir, { recursive: true });
-  const spec = template(type);
   if (local) {
     const assets = planExperiment(spec).assets;
     await mkdir(join(dir, "photos"), { recursive: true });
@@ -79,7 +191,7 @@ export async function initProject(
   for (const [name, content] of [
     [
       ".env.example",
-      "# Supply your own key; no key is required for local photos.\nOPENAI_API_KEY=\n",
+      "# Optional alternative to simple-video auth login.\n# Load explicitly with --env-file; no key is needed for local photos.\nOPENAI_API_KEY=\n",
     ],
     [".gitignore", ".env\n.env.*\n!.env.example\n.simple-video/\n"],
   ]) {
@@ -94,6 +206,13 @@ export async function initProject(
     directory: dir,
     recipe,
     local,
+    descriptions: describeImages(spec),
+    promptLocation:
+      spec.type === "loop"
+        ? "prompt"
+        : spec.type === "battle"
+          ? "hero, opponent, environment and rounds"
+          : "shots[].prompt",
     next: `simple-video --project ${JSON.stringify(dir)} plan`,
   };
 }

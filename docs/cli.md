@@ -1,6 +1,6 @@
 # CLI contract
 
-In a terminal, commands print readable summaries and progress messages. Setup explains its downloads and locations, then asks for approval with a default of **No**. Other commands do not prompt. No command needs a browser.
+In a terminal, commands print readable summaries and progress messages. Setup asks for approval with a default of **No**; `init` asks for missing image descriptions; `auth login` uses hidden key entry. All have non-interactive equivalents. No command needs a browser.
 
 For agents and scripts, use `--json --no-input`. Piped stdout defaults to JSON; `--human` forces readable text when piping. `--human` and `--json` cannot be combined. `--json` never prompts, including when run in a terminal. `simple-video` and `simple-video --help` print help; `--version` prints the version. Other successful JSON-mode commands emit exactly one result on stdout:
 
@@ -61,7 +61,49 @@ Setup progress events contain `stage: "setup"`, a `step`, and `status: "started"
 
 `--project DIR` defaults to the current directory. `--recipe FILE` defaults to `simple-video.json` inside it. Local image/music paths are relative to the recipe file, independent of the invocation directory. `--root DIR` selects the asset/run cache; otherwise it is `PROJECT/.simple-video`. Explicit `--root`, `--home` and `--env-file` paths are relative to the invocation directory.
 
-`--home DIR` selects the managed runtime and wins over `SIMPLE_VIDEO_HOME`. Environment variables supply keys; `--env-file FILE` fills missing supported values only. Environment variables take precedence over file values. No credentials are written by the CLI.
+`--home DIR` selects the managed runtime and wins over `SIMPLE_VIDEO_HOME`. `--config-dir DIR` selects saved-login storage and wins over `SIMPLE_VIDEO_CONFIG_DIR`; it is separate from runtime and project data. Environment variables supply keys; `--env-file FILE` fills missing supported values only. Generation/doctor then fall back to saved credentials. Only `auth login` writes credentials; `auth logout` removes the saved file.
+
+## Authentication
+
+`auth login` explains the destination, then reads your OpenAI key without echoing it. It stores `credentials.json` in a user-level config directory:
+
+| Platform | Default directory                            |
+| -------- | -------------------------------------------- |
+| macOS    | `~/Library/Application Support/simple-video` |
+| Linux    | `${XDG_CONFIG_HOME:-~/.config}/simple-video` |
+| Windows  | `%LOCALAPPDATA%/simple-video`                |
+
+The file is unencrypted. On Unix the directory must be owned by the user with `0700` permissions and the file with `0600` permissions. Symlinks and insecure stores are rejected. Windows file protection depends on the user directory's ACLs. Choose a private directory outside Git when overriding it. Credentials are not copied into recipes, run records or exports.
+
+```sh
+simple-video auth login
+simple-video auth status --json
+simple-video auth logout
+
+# Persist a key already supplied by your environment:
+simple-video auth login --from-env --json --no-input
+# Import an existing env file once without copying its value manually:
+simple-video --env-file ./my-private.env auth login --from-env --json --no-input
+```
+
+`--stdin` reads a key from piped standard input. Do not put secret literals in shell commands; pipe from a secret manager instead. `--stdin` and `--from-env` are mutually exclusive. JSON/non-interactive login without an explicit input source exits 2 with `INPUT_REQUIRED`. Login/status make no network request and report `validatedWithProvider: false`; presence does not guarantee model access or credit. `auth status` never reveals a key or key prefix. Logout leaves environment variables and external env files untouched.
+
+## Image descriptions
+
+`init` defaults to `single`: one `--prompt` describes the image and `--duration` defaults to six seconds. In a terminal it asks what image you want when no description is supplied. In automation missing descriptions return `INPUT_REQUIRED` without creating a project.
+
+```sh
+simple-video init ./photo --prompt "A T. rex at a coffee counter, realistic layered photograph" --duration 6
+simple-video init ./story --template slideshow \
+  --prompt "A triceratops entering a tiny gym, realistic layered photo" \
+  --prompt "The same triceratops stuck in the gym doorway, realistic photo"
+simple-video init ./fight --template comparison \
+  --hero "A T. rex" --opponent "woolly mammoths" --setting "An open snowy valley"
+```
+
+Repeat `--prompt` 2–12 times for slideshow/challenge templates. Repeat `--caption` once per photo to add text, or omit it for no captions. `--duration` is per photo; it defaults to three seconds for those templates. Terminal initialization without prompts asks for three slideshow/challenge descriptions. Comparison initialization asks for missing hero, opponent and setting; edit round counts and timing in the recipe. `--name` sets the title.
+
+`--local` explicitly creates geometric sample artwork and cannot be combined with image-description flags. `--example` explicitly writes preset descriptions for later editing. `init` makes no generation calls. The recipe stores single-image text in `prompt`, slideshow/challenge text in `shots[].prompt`, and comparison subjects/setting in `hero`, `opponent`, `environment` and `rounds`. Human `init` and `plan` output shows these descriptions. JSON plans retain the complete expanded prompts in `assets[].prompt` and add a short `descriptions` list for review.
 
 ## Planning and paid generation
 
@@ -69,7 +111,7 @@ Setup progress events contain `stage: "setup"`, a `step`, and `status: "started"
 simple-video --project ./story schema --json > schema-response.json
 simple-video --project ./story plan
 simple-video --project ./story create --id episode-01 --dry-run
-simple-video --project ./story --env-file ./story/.env create --id episode-01 --execute
+simple-video --project ./story create --id episode-01 --execute
 ```
 
 Use `.data` from `schema` as the JSON Schema. `plan` reports exact asset IDs, scenes, duration, estimate and `budgetFits`. A recipe containing `image.files` defaults to the local provider; otherwise the provider is OpenAI. Use `--provider fixture` for synthetic test images. The OpenAI provider rejects recipes containing `image.files` to avoid ambiguity. Local input requires a file for every planned asset. Mixing generated and local photos in one create command is not currently supported; generate images first, then use them in a local-photo recipe.

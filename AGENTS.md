@@ -6,4 +6,6 @@ Use Node.js 24+. Run `npm test`, `npm run check`, `npm run format:check`, and `n
 
 Keep code, docs, examples and the bundled skill synchronized. Paths must work outside this checkout. Do not reference the maintainer's machine, production accounts, VPS, n8n, personal media or another project's credentials. No credentials or runtime assets belong in Git or npm artifacts. DepthFlow remains a separately installed dependency with its own AGPL license; preserve notices and the explicit renderer boundary.
 
+Initialization must request explicit content, prompt for missing descriptions in a terminal, or require deliberate `--example`/`--local` selection. Key setup uses hidden input or explicit stdin/environment imports. Never put key values in command arguments, output, recipes or receipts. Preserve credential source precedence, private storage permissions and symlink checks. Test credential handling only with dummy keys and isolated config directories.
+
 Do not change the original Paleoflux project while working here. Never silently replace DepthFlow with the CPU renderer. No generation command should upload or publish media.

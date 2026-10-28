@@ -12,15 +12,18 @@ Requires Node.js 24+ and FFmpeg/ffprobe (with libx264). On macOS: `brew install 
 npm install -g @simple-post/video
 simple-video --version
 
-# Setup explains downloads, disk usage and locations, then asks to continue (default: No).
-simple-video setup --dry-run
+# One-time renderer installation; review its plan and confirm.
 simple-video setup
-simple-video doctor --check-render
+simple-video auth login
 
-# A complete local demo, with original geometric sample photos. No paid API call.
-simple-video init ./my-video --template slideshow --local
+# Say what image you want. This saves a recipe; no API call yet.
+simple-video init ./my-video \
+  --prompt "A T. rex reaching for a coffee cup on a cafe counter, realistic photo with layered depth" \
+  --duration 6
 simple-video --project ./my-video plan
-simple-video --project ./my-video create --id first-video
+
+# --execute authorizes the planned image-generation request.
+simple-video --project ./my-video create --id first-video --execute
 simple-video --project ./my-video export --run first-video --output ./review
 ```
 
@@ -30,7 +33,11 @@ Alternatively invoke the CLI without a global install:
 npx --yes --package @simple-post/video simple-video --help
 ```
 
-Open the exported MP4 to review it. Replace the sample photos with your own images, or generate photos below. Installing the npm package does not install Python or download the DepthFlow environment. Setup may download several GB; it shows its plan and asks for approval before downloading or installing anything. Press Enter or answer `n` to cancel. For unattended installation, review `setup --dry-run --json` first, then run `setup --yes --json --no-input`.
+Open the exported MP4 to review it. `init` defaults to one photo; in a terminal without `--prompt`, it asks what image you want. The description is saved as `prompt` in `my-video/simple-video.json`, and `plan` displays it before generation. Use `--caption "Your text"` to add optional on-screen text.
+
+For a free renderer-only test, run `simple-video init ./local-demo --template slideshow --local`, then create without `--execute`. `--local` creates geometric demo artwork; it does not generate a dinosaur or interpret an image prompt. To import your own photos, edit `image.files` in the recipe.
+
+Installing the npm package does not install Python or download the DepthFlow environment. Setup may download several GB; it shows its plan and asks for approval before downloading or installing anything. Press Enter or answer `n` to cancel. For unattended installation, review `setup --dry-run --json` first, then run `setup --yes --json --no-input`.
 
 For development from the private source checkout:
 
@@ -44,20 +51,34 @@ node bin/run.js --help
 
 `npm link --ignore-scripts` optionally makes the development command available. Source commands use `node bin/run.js` in place of `simple-video`.
 
-## Generate photos with your own key
+## Choose your images
 
 ```sh
-simple-video init ./generated --template slideshow
-# Put your own OPENAI_API_KEY in ./generated/.env, or export it in your shell.
-# Edit ./generated/simple-video.json: prompts, captions, durations and budget.
-simple-video --project ./generated plan
+simple-video init ./story --template slideshow \
+  --prompt "A triceratops trying to enter a small gym, layered realistic photo" \
+  --prompt "The same triceratops wedged in the gym doorway, realistic photo" \
+  --caption "First day" --caption "Small problem" --duration 3
 
-# Without --execute this only returns the plan. Generation is never implicit.
-simple-video --project ./generated --env-file ./generated/.env \
-  create --id terrier-story --execute
+simple-video init ./battle --template comparison \
+  --hero "A T. rex" --opponent "woolly mammoths" \
+  --setting "An open snowy valley"
 ```
 
-The default image model is `gpt-image-2.5-flare`; set `image.model` explicitly to select another compatible GPT Image model. Linked slides use the preceding image as an editing reference. Your key must have access to the selected model. No credentials are included, discovered in other projects, copied, or printed. `--env-file` is explicit; `.env` is not loaded automatically. [Official image API documentation](https://developers.openai.com/api/docs/guides/image-generation).
+Use one `--prompt` per photo. A single-photo recipe stores it in `prompt`; slideshows/challenges store each description in `shots[].prompt`. Comparisons store `hero`, `opponent`, `environment` and round settings. You can edit these in `simple-video.json` after initialization. `--example` deliberately creates a preset starter recipe to edit; unattended initialization otherwise requires descriptions. Creating a recipe never makes a paid call.
+
+The default image model is `gpt-image-2.5-flare`; set `image.model` explicitly to select another compatible GPT Image model. Linked slides use the preceding image as an editing reference. Your key must have access to the selected model. [Official image API documentation](https://developers.openai.com/api/docs/guides/image-generation).
+
+## Save your API key once
+
+```sh
+simple-video auth login   # paste your OpenAI key at a hidden prompt
+simple-video auth status  # show source/location, never the key
+simple-video auth logout  # remove the saved key
+```
+
+Login shows the destination before asking for the key. It saves a private local file outside your projects and reuses it for future generation. The file is **unencrypted**, with mode `0600` and a `0700` directory on Unix; Windows uses your user directory's permissions. No key is sent to OpenAI during login/status, and no key is bundled or copied from other projects. See [credential storage and automation](docs/cli.md#authentication).
+
+Environment variables and explicit `--env-file FILE` still work and take precedence over saved credentials. `.env` files are not discovered automatically. Agents can use `auth login --from-env --json --no-input` to save an already-authorized environment key, or `auth login --stdin` to import from a secure pipe; there is no command-line key-value flag. Local-photo rendering needs no login.
 
 Budgets enforce request counts and a reservation calculated from your `estimatePerImageUsd`. They are **not a provider-enforced dollar ceiling**. Inspect `plan` before spending. Requests and raw usage are recorded. An interrupted request with an unknown outcome stops rather than automatically charging again; see [recovery](docs/cli.md#resuming-and-recovery).
 
@@ -74,7 +95,8 @@ These are photo animations, not synthesized moving subjects. DepthFlow is the de
 
 | Command                                         | Purpose                                                                   |
 | ----------------------------------------------- | ------------------------------------------------------------------------- |
-| `init [directory] --template slideshow --local` | Create an editable project and optional sample photos                     |
+| `init [directory] --prompt "Image description"` | Describe your photos and save an editable recipe                          |
+| `auth login` / `auth status` / `auth logout`    | Save, inspect or remove a key shared across your projects                 |
 | `setup [--dry-run] [--skip-model] [--yes]`      | Review and approve managed Python, DepthFlow and local model installation |
 | `doctor [--check-render] [--depth]`             | Check dependencies, graphics and optional depth inference                 |
 | `schema`                                        | Print the recipe JSON Schema                                              |
@@ -85,7 +107,7 @@ These are photo animations, not synthesized moving subjects. DepthFlow is the de
 | `export --run NAME --output DIRECTORY`          | Copy a validated run or variant and its metadata for review/publishing    |
 | `skill [--output DIRECTORY]`                    | Locate or copy the included agent skill                                   |
 
-Terminal output uses short, readable progress messages and results. Global flags include `--project`, `--root`, `--home`, `--env-file`, `--json`, `--human`, `--quiet`, and `--no-input`. Use `--json --no-input` for agents and scripts: results go to stdout, progress/errors go to stderr, and no prompt appears. Piped stdout also defaults to JSON. Unattended setup requires explicit `--yes`; this does not authorize paid image generation. See the [complete CLI contract](docs/cli.md).
+Terminal output uses short, readable progress messages and results. Global flags include `--project`, `--root`, `--home`, `--config-dir`, `--env-file`, `--json`, `--human`, `--quiet`, and `--no-input`. Use `--json --no-input` for agents and scripts: results go to stdout, progress/errors go to stderr, and no prompt appears. Piped stdout also defaults to JSON. Unattended setup requires explicit `--yes`; this does not authorize paid image generation. See the [complete CLI contract](docs/cli.md).
 
 ## Files stay on your machine
 
@@ -93,7 +115,7 @@ Terminal output uses short, readable progress messages and results. Global flags
 my-video/
   simple-video.json         # portable recipe; paths relative to this file
   photos/                   # your local input images, when used
-  .env                      # your key; ignored, never copied
+  .env                      # optional alternative to saved login; ignored
   .simple-video/            # generated assets, receipts, runs and render caches
     runs/first-video/
       run.json

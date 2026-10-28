@@ -61,7 +61,7 @@ For servers, use a tested EGL/OpenGL stack and run the render probe first. If gr
 - **Graphics/GLFW/EGL failure:** run doctor with `--check-render` outside a restricted graphics sandbox. Check the machine's OpenGL support. The CLI cannot grant GPU permissions.
 - **FFmpeg missing:** install it using the operating system's package manager; doctor lists missing binaries.
 - **Model cannot download:** check proxy/network access; run `doctor --depth` once while connected.
-- **No key:** provide `OPENAI_API_KEY` through your environment or an explicitly selected env file. Local-photo mode needs no key.
+- **No key:** run `simple-video auth login` once, or provide `OPENAI_API_KEY` through your environment or an explicitly selected env file. Local-photo mode needs no key. `auth status` reports the active source without exposing the key.
 - **Install interruption:** rerun setup; it reuses the managed environment and caches.
 - **Checksum mismatch:** installation stops before executing the downloaded binary. Investigate the download rather than disabling verification.
 

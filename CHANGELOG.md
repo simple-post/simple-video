@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0 — 2026-10-28
+
+- Describe images directly with `init --prompt`, repeated prompts/captions for slideshows, and hero/opponent/setting flags for comparisons. Terminal initialization asks for missing descriptions, and init/plan show what will be generated. Custom photos have no on-screen caption unless one is supplied.
+- `auth login` saves an OpenAI key once per computer with hidden entry; `auth status` reports only source/location and `auth logout` removes it. Private, unencrypted config files stay outside projects. Explicit environment/env-file keys take precedence, and agents can import from stdin/environment without key-value command arguments.
+- Initialization now defaults to a single photo and requires content in automation. Use `--example` for preset editable recipes or `--local` for original geometric demo artwork. Existing saved recipes and generation authorization remain unchanged.
+
 ## 0.1.1 — 2026-10-28
 
 - Setup explains downloads, installation locations and potential disk use, then asks for confirmation with a default of No. Unattended installs require explicit `--yes`; `--dry-run` always makes no changes.

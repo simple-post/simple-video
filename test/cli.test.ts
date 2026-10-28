@@ -24,7 +24,14 @@ const bin = fileURLToPath(new URL("../../bin/run.js", import.meta.url));
 async function cli(args: string[], cwd?: string) {
   const { stdout, stderr } = await exec(process.execPath, [bin, ...args], {
     cwd,
-    env: { ...process.env, OPENAI_API_KEY: "" },
+    env: {
+      ...process.env,
+      OPENAI_API_KEY: "",
+      SIMPLE_VIDEO_CONFIG_DIR: join(
+        tmpdir(),
+        `simple-video-empty-config-${process.pid}`,
+      ),
+    },
     timeout: 60_000,
   });
   return { ...JSON.parse(stdout), stderr };
@@ -87,6 +94,127 @@ test("paid generation is a plan until --execute, with no key or runtime required
         return true;
       },
     );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("init stores explicit prompts, previews them in plans, and rejects missing content without creating files", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "simple-video-content-"));
+  try {
+    const single = join(dir, "single"),
+      prompt =
+        "A T. rex trying to eat spaghetti in a tiny Italian restaurant, realistic layered photo";
+    await cli([
+      "init",
+      single,
+      "--prompt",
+      prompt,
+      "--duration",
+      "4",
+      "--name",
+      "Tiny arms",
+    ]);
+    const spec = await readRecipe(join(single, "simple-video.json"));
+    assert.equal(spec.type, "loop");
+    if (spec.type !== "loop") throw Error("Expected single image");
+    assert.equal(spec.prompt, prompt);
+    assert.equal(spec.duration, 4);
+    assert.equal(spec.caption, "");
+    const planned = await cli(["--project", single, "plan"]);
+    assert.equal(planned.data.descriptions[0].prompt, prompt);
+    assert.ok(planned.data.assets[0].prompt.includes(prompt));
+    const notExecuted = await cli([
+      "--project",
+      single,
+      "create",
+      "--id",
+      "first",
+    ]);
+    assert.equal(notExecuted.data.executed, false);
+    assert.equal(notExecuted.data.paidImageRequests, 1);
+    const slides = join(dir, "slides");
+    await cli([
+      "init",
+      slides,
+      "--template",
+      "slideshow",
+      "--prompt",
+      "A triceratops entering a very small gym",
+      "--prompt",
+      "The same triceratops bending the exercise bike",
+      "--caption",
+      "Leg day",
+      "--caption",
+      "Oops",
+      "--duration",
+      "2",
+    ]);
+    const story = await readRecipe(join(slides, "simple-video.json"));
+    assert.equal(story.type, "story");
+    if (story.type !== "story") throw Error("Expected story");
+    assert.equal(story.shots.length, 2);
+    assert.equal(story.shots[1]?.caption, "Oops");
+    assert.ok(!story.character.includes("terrier"));
+    const battle = join(dir, "battle");
+    await cli([
+      "init",
+      battle,
+      "--template",
+      "comparison",
+      "--hero",
+      "A T. rex",
+      "--opponent",
+      "woolly mammoths",
+      "--setting",
+      "An open snowy valley",
+    ]);
+    const matchup = (await cli(["--project", battle, "plan"])).data;
+    assert.equal(matchup.paidImageRequests, 7);
+    assert.ok(matchup.assets[0].prompt.includes("T. rex"));
+    assert.ok(!matchup.assets[0].prompt.includes("robot"));
+    for (const args of [
+      [],
+      ["--template", "comparison", "--hero", "A rex"],
+      ["--template", "slideshow", "--prompt", prompt],
+      ["--local", "--prompt", prompt],
+    ]) {
+      const target = join(dir, "invalid");
+      await assert.rejects(
+        cli(["init", target, "--json", "--no-input", ...args]),
+      );
+      await assert.rejects(access(target));
+    }
+    const recipeFile = join(single, "simple-video.json"),
+      raw = JSON.parse(await readFile(recipeFile, "utf8"));
+    raw.video = {
+      ...raw.video,
+      width: 180,
+      height: 320,
+      fps: 24,
+      motion: "static",
+    };
+    raw.duration = 2;
+    await writeFile(recipeFile, JSON.stringify(raw));
+    const rendered = await cli([
+      "--project",
+      single,
+      "create",
+      "--id",
+      "prompt-fixture",
+      "--provider",
+      "fixture",
+      "--quiet",
+    ]);
+    assert.equal(rendered.data.requests, 0);
+    assert.equal(rendered.data.report.frames, 48);
+    const run = JSON.parse(
+      await readFile(
+        join(single, ".simple-video", "runs", "prompt-fixture", "run.json"),
+        "utf8",
+      ),
+    );
+    assert.ok(run.plan.assets[0].prompt.includes(prompt));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -230,7 +358,14 @@ test("readable output is available for humans and explicit JSON stays parseable"
   try {
     const invoke = (args: string[]) =>
       exec(process.execPath, [bin, ...args], {
-        env: { ...process.env, OPENAI_API_KEY: "" },
+        env: {
+          ...process.env,
+          OPENAI_API_KEY: "",
+          SIMPLE_VIDEO_CONFIG_DIR: join(
+            tmpdir(),
+            `simple-video-empty-config-${process.pid}`,
+          ),
+        },
         timeout: 60_000,
       });
     const initialized = await invoke(["--human", "init", dir, "--local"]);
