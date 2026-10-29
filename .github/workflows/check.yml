@@ -5,6 +5,8 @@ on:
 permissions:
   contents: read
 jobs:
+  credential-stores:
+    uses: ./.github/workflows/credential-stores.yml
   test:
     strategy:
       matrix:

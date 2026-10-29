@@ -327,6 +327,8 @@ test(
         "--no-input",
         "setup",
         "--yes",
+        "--storage",
+        "env",
         "--skip-model",
         "--uv",
         uv,

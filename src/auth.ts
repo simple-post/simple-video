@@ -1,64 +1,64 @@
-import { homedir, platform } from "node:os";
-import { join, resolve } from "node:path";
-import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { mkdir, open, rename, unlink, lstat } from "node:fs/promises";
 import { constants } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { CliError } from "./io.js";
-
-export function credentialsPath(
-  directory = process.env.SIMPLE_VIDEO_CONFIG_DIR,
-) {
-  const base =
-    directory ??
-    join(
-      platform() === "darwin"
-        ? join(homedir(), "Library", "Application Support")
-        : platform() === "win32"
-          ? (process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"))
-          : (process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config")),
-      "simple-video",
-    );
-  return join(resolve(base), "credentials.json");
-}
-
-async function inspect(path: string, directory = false) {
-  const stat = await lstat(path).catch((e: NodeJS.ErrnoException) => {
-    if (e.code === "ENOENT") return null;
-    throw new CliError(
-      "AUTH_CONFIG_ERROR",
-      3,
-      "Could not access the Simple Video credential store. Check its permissions.",
-    );
-  });
-  if (
-    stat &&
-    (stat.isSymbolicLink() ||
-      (directory ? !stat.isDirectory() : !stat.isFile()) ||
-      (platform() !== "win32" &&
-        ((stat.mode & 0o077) !== 0 || stat.uid !== process.getuid?.())))
-  )
-    throw new CliError(
-      "AUTH_CONFIG_UNSAFE",
-      3,
-      `Credential ${directory ? "directory" : "file"} must belong to you, must not be a symlink, and must be private. Check ${path} (${directory ? "0700" : "0600"} permissions on Unix).`,
-    );
-  return stat;
-}
-
-export function validateKey(value: string) {
-  const key = value.trim();
-  if (!/^sk-[A-Za-z0-9_-]{16,1000}$/.test(key))
+import { platform } from "node:os";
+import { CliError, withLock } from "./io.js";
+import {
+  credentialsPath,
+  inspect,
+  fileKey,
+  saveFileKey,
+  deleteFileKey,
+  validateKey,
+} from "./auth-file.js";
+import {
+  nativeStore,
+  nativeIdentity,
+  nativeLabel,
+  storeUnavailable,
+  type NativeStore,
+} from "./native-credentials.js";
+export { credentialsPath, validateKey, keyFromStdin } from "./auth-file.js";
+export type Storage = "keychain" | "file" | "env";
+export const settingsPath = () =>
+  join(dirname(credentialsPath()), "authentication.json");
+export function storage(value: string): Storage {
+  if (!["keychain", "file", "env"].includes(value))
     throw new CliError(
       "INVALID_INPUT",
       2,
-      "Expected an OpenAI API key beginning with sk-, with no spaces or extra text. Nothing was saved.",
+      "Storage must be keychain, file or env.",
     );
-  return key;
+  return value as Storage;
 }
-
-export async function savedKey() {
-  const file = credentialsPath();
-  const { dirname } = await import("node:path");
+export function storageInfo(value: Storage) {
+  return value === "keychain"
+    ? {
+        storage: value,
+        label: nativeLabel(),
+        ...nativeIdentity(),
+        protection: "OS-managed",
+      }
+    : value === "file"
+      ? {
+          storage: value,
+          label: "Private local file (unencrypted)",
+          path: credentialsPath(),
+          encrypted: false,
+        }
+      : { storage: value, label: "Environment variable only (no saved key)" };
+}
+export function storageChoices() {
+  return (["keychain", "file", "env"] as const)
+    .filter(
+      (s) =>
+        s !== "keychain" || ["darwin", "linux", "win32"].includes(platform()),
+    )
+    .map((s) => ({ ...storageInfo(s), recommended: s === "keychain" }));
+}
+export async function selection(): Promise<Storage | undefined> {
+  const file = settingsPath();
   await inspect(dirname(file), true);
   if (!(await inspect(file))) return undefined;
   const handle = await open(
@@ -66,103 +66,230 @@ export async function savedKey() {
     constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
   );
   try {
-    const stat = await handle.stat();
-    if (stat.size > 8192) throw Error("Invalid store");
-    const value = JSON.parse(await handle.readFile("utf8"));
-    if (value.version !== 1 || typeof value.OPENAI_API_KEY !== "string")
-      throw Error("Invalid store");
-    return validateKey(value.OPENAI_API_KEY);
+    if ((await handle.stat()).size > 8192) throw Error("Invalid settings");
+    const data = JSON.parse(await handle.readFile("utf8"));
+    if (data.version !== 1) throw Error("Invalid version");
+    return storage(data.storage);
   } catch {
     throw new CliError(
       "AUTH_CONFIG_ERROR",
       3,
-      "Saved credentials are unreadable or invalid. Run simple-video auth login to replace them, or auth logout to remove them.",
+      "Authentication preferences are invalid. Inspect authentication.json before continuing.",
     );
   } finally {
     await handle.close();
   }
 }
-
-export async function saveKey(value: string) {
-  const key = validateKey(value),
-    file = credentialsPath(),
-    { dirname } = await import("node:path"),
-    dir = dirname(file);
+async function writeSelection(value: Storage) {
+  const file = settingsPath(),
+    dir = dirname(file),
+    temp = join(dir, `.auth-${randomUUID()}.tmp`);
   await mkdir(dir, { recursive: true, mode: 0o700 });
   await inspect(dir, true);
   await inspect(file);
-  const temporary = join(dir, `.credentials-${randomUUID()}.tmp`);
   try {
-    const handle = await open(temporary, "wx", 0o600);
+    const handle = await open(temp, "wx", 0o600);
     try {
       await handle.writeFile(
-        JSON.stringify({ version: 1, OPENAI_API_KEY: key }) + "\n",
+        JSON.stringify({ version: 1, storage: value }) + "\n",
       );
     } finally {
       await handle.close();
     }
-    await rename(temporary, file);
+    await rename(temp, file);
   } finally {
-    await unlink(temporary).catch(() => {});
+    await unlink(temp).catch(() => {});
   }
+}
+export async function configureStorage(value: Storage) {
+  const chosen = storage(value);
+  await authLock(() => writeSelection(chosen));
+  return {
+    selected: true,
+    ...storageInfo(value),
+    otherFilePresent: value !== "file" && (await legacyFilePresent()),
+    note: "Only the storage preference was saved. Existing keys in other stores are unchanged.",
+  };
+}
+async function authLock<T>(action: () => Promise<T>) {
+  const dir = dirname(credentialsPath());
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  await inspect(dir, true);
+  return withLock(join(dir, "auth-lock"), action);
+}
+export async function legacyFilePresent() {
+  await inspect(dirname(credentialsPath()), true);
+  // Presence checks must not read a key or fail after saving to a different store.
+  return lstat(credentialsPath()).then(
+    () => true,
+    (e: NodeJS.ErrnoException) => {
+      if (e.code === "ENOENT") return false;
+      throw new CliError(
+        "AUTH_CONFIG_ERROR",
+        3,
+        "Could not inspect the existing credential file.",
+      );
+    },
+  );
+}
+export async function authPlan(value?: Storage) {
+  return {
+    selected: value ?? (await selection()) ?? null,
+    choices: storageChoices(),
+    settingsPath: settingsPath(),
+  };
+}
+export async function savedKey(native: NativeStore = nativeStore()) {
+  const chosen = await selection();
+  if (chosen === "env") return undefined;
+  if (!chosen) {
+    if (await legacyFilePresent())
+      throw new CliError(
+        "STORAGE_SELECTION_REQUIRED",
+        2,
+        "A legacy file-based key exists. Choose storage with auth login; use --storage keychain --migrate-file to move it after verification.",
+      );
+    return undefined;
+  }
+  if (chosen === "file") return fileKey();
+  const key = await native.get();
+  return key === null ? undefined : validateKey(key);
+}
+export async function saveKey(
+  value: string,
+  chosen?: Storage,
+  native: NativeStore = nativeStore(),
+) {
+  const key = validateKey(value),
+    target = chosen ?? (await selection());
+  if (!target)
+    throw new CliError(
+      "STORAGE_SELECTION_REQUIRED",
+      2,
+      "Choose --storage keychain or --storage file before saving a key.",
+    );
+  if (target === "env")
+    throw new CliError(
+      "INVALID_INPUT",
+      2,
+      "Environment mode never saves a key. Set OPENAI_API_KEY in your environment or use --env-file.",
+    );
+  return authLock(() => saveUnlocked(key, target, native));
+}
+async function saveUnlocked(
+  key: string,
+  target: "file" | "keychain",
+  native: NativeStore,
+) {
+  if (target === "file") await saveFileKey(key);
+  else {
+    await native.set(key);
+    if ((await native.get()) !== key) throw storeUnavailable();
+  }
+  await writeSelection(target);
   return {
     saved: true,
-    storage: "local-file",
-    path: file,
-    encrypted: false,
+    ...storageInfo(target),
+    otherFilePresent: target === "keychain" && (await legacyFilePresent()),
     validatedWithProvider: false,
   };
 }
-
-export async function logout() {
-  const file = credentialsPath(),
-    { dirname } = await import("node:path");
-  await inspect(dirname(file), true);
-  const found = await inspect(file);
-  if (found) await unlink(file);
-  return {
-    removed: Boolean(found),
-    path: file,
-    note: "Environment variables and env files are unchanged.",
-  };
+export async function migrateFile(
+  chosen: Storage,
+  native: NativeStore = nativeStore(),
+) {
+  if (chosen !== "keychain")
+    throw new CliError(
+      "INVALID_INPUT",
+      2,
+      "--migrate-file requires --storage keychain.",
+    );
+  return authLock(async () => {
+    const key = await fileKey();
+    if (!key)
+      throw new CliError(
+        "SETUP_REQUIRED",
+        3,
+        "There is no file-based key to migrate.",
+      );
+    const result = await saveUnlocked(key, chosen, native);
+    // Keep the original if the destination cannot be read back exactly.
+    try {
+      await deleteFileKey();
+    } catch {
+      throw new CliError(
+        "AUTH_MIGRATION_INCOMPLETE",
+        3,
+        "The OS store was verified, but the original key file could not be removed. It still exists; inspect it or use auth logout --storage file.",
+      );
+    }
+    return {
+      ...result,
+      migrated: true,
+      otherFilePresent: false,
+      removedFile: credentialsPath(),
+    };
+  });
 }
-
+export async function logout(
+  chosen?: Storage,
+  native: NativeStore = nativeStore(),
+) {
+  const target = chosen ?? (await selection());
+  if (!target)
+    return {
+      removed: false,
+      note: "No storage selected. Use --storage file to remove a legacy file, or --storage keychain for the OS store.",
+    };
+  return authLock(async () => {
+    const removed =
+      target === "env"
+        ? false
+        : target === "file"
+          ? (await deleteFileKey()).removed
+          : await native.delete();
+    return {
+      removed,
+      ...storageInfo(target),
+      note: "Environment variables, external env files and other storage backends are unchanged.",
+    };
+  });
+}
 export async function keyStatus(envFile?: string) {
-  const current = process.env.OPENAI_API_KEY;
-  if (current)
+  const chosen = await selection();
+  const otherFilePresent = chosen !== "file" && (await legacyFilePresent());
+  if (process.env.OPENAI_API_KEY)
     return {
       configured: true,
       source: envFile ? "environment or --env-file" : "environment",
+      selectedStorage: chosen ?? null,
+      otherFilePresent,
       validatedWithProvider: false,
     };
-  const configured = Boolean(await savedKey());
+  if (!chosen)
+    return {
+      configured: false,
+      source: "none",
+      storage: "unselected",
+      legacyFilePresent: await legacyFilePresent(),
+      validatedWithProvider: false,
+    };
   return {
-    configured,
-    source: configured ? "saved credentials" : "none",
-    path: credentialsPath(),
+    configured: Boolean(await savedKey()),
+    source:
+      chosen === "keychain"
+        ? nativeLabel()
+        : chosen === "file"
+          ? "saved credentials"
+          : "environment",
+    ...storageInfo(chosen),
+    otherFilePresent,
     validatedWithProvider: false,
   };
 }
-
 export async function loadSavedKey() {
   if (!process.env.OPENAI_API_KEY) {
     const key = await savedKey();
     if (key) process.env.OPENAI_API_KEY = key;
   }
-}
-
-export async function keyFromStdin(
-  input: NodeJS.ReadableStream = process.stdin,
-) {
-  let text = "";
-  for await (const chunk of input) {
-    text += String(chunk);
-    if (text.length > 8192)
-      throw new CliError(
-        "INVALID_INPUT",
-        2,
-        "API-key input is too long. Nothing was saved.",
-      );
-  }
-  return validateKey(text);
 }

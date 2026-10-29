@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 — 2026-10-29
+
+- Setup and authentication offer native OS storage (macOS Keychain, Linux Secret Service, Windows Credential Manager), explicit file storage or environment-only access. `--storage` provides the choice for automation, and `setup --auth-only` changes it without runtime downloads.
+- Native secrets use a pinned optional binding in an isolated helper with IPC-only transport and a bounded timeout. Missing/locked stores fail without falling back; Linux explicitly requires persistent Secret Service.
+- Explicit file-to-native migration verifies read-back before removing the original. Writer locks protect login/logout/migration, and status reports backend identity without exposing key values.
+- Releases now require real native-store create/read/update/delete and migration checks on all three operating systems.
+
 ## 0.2.0 — 2026-10-28
 
 - Describe images directly with `init --prompt`, repeated prompts/captions for slideshows, and hero/opponent/setting flags for comparisons. Terminal initialization asks for missing descriptions, and init/plan show what will be generated. Custom photos have no on-screen caption unless one is supplied.

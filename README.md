@@ -37,7 +37,7 @@ Open the exported MP4 to review it. `init` defaults to one photo; in a terminal 
 
 For a free renderer-only test, run `simple-video init ./local-demo --template slideshow --local`, then create without `--execute`. `--local` creates geometric demo artwork; it does not generate a dinosaur or interpret an image prompt. To import your own photos, edit `image.files` in the recipe.
 
-Installing the npm package does not install Python or download the DepthFlow environment. Setup may download several GB; it shows its plan and asks for approval before downloading or installing anything. Press Enter or answer `n` to cancel. For unattended installation, review `setup --dry-run --json` first, then run `setup --yes --json --no-input`.
+Installing the npm package does not install Python or download the DepthFlow environment. Setup may download several GB; it shows its plan and asks for approval before downloading or installing anything. Press Enter or answer `n` to cancel. For unattended installation, review `setup --dry-run --json` first, then run `setup --yes --storage env --json --no-input`.
 
 For development from the private source checkout:
 
@@ -68,17 +68,20 @@ Use one `--prompt` per photo. A single-photo recipe stores it in `prompt`; slide
 
 The default image model is `gpt-image-2.5-flare`; set `image.model` explicitly to select another compatible GPT Image model. Linked slides use the preceding image as an editing reference. Your key must have access to the selected model. [Official image API documentation](https://developers.openai.com/api/docs/guides/image-generation).
 
-## Save your API key once
+## Choose credential storage
+
+Both `setup` and `auth login` ask where keys should be kept: the native OS store (recommended), an explicit private file, or environment-only mode.
 
 ```sh
-simple-video auth login   # paste your OpenAI key at a hidden prompt
-simple-video auth status  # show source/location, never the key
-simple-video auth logout  # remove the saved key
+simple-video setup --auth-only  # storage choice, without runtime downloads
+simple-video auth login         # choose storage, then paste a hidden key
+simple-video auth status         # inspect source/store, never the key
+simple-video auth logout         # remove the selected saved key
 ```
 
-Login shows the destination before asking for the key. It saves a private local file outside your projects and reuses it for future generation. The file is **unencrypted**, with mode `0600` and a `0700` directory on Unix; Windows uses your user directory's permissions. No key is sent to OpenAI during login/status, and no key is bundled or copied from other projects. See [credential storage and automation](docs/cli.md#authentication).
+Native storage uses macOS Keychain, Linux Secret Service or Windows Credential Manager. File mode is explicitly selected and unencrypted; Unix permissions are `0600`/`0700`, while Windows uses the user directory's ACLs. Environment mode saves no key. Unavailable native stores fail with instructions; they never silently downgrade to a file or memory-only store.
 
-Environment variables and explicit `--env-file FILE` still work and take precedence over saved credentials. `.env` files are not discovered automatically. Agents can use `auth login --from-env --json --no-input` to save an already-authorized environment key, or `auth login --stdin` to import from a secure pipe; there is no command-line key-value flag. Local-photo rendering needs no login.
+For automation, use `auth login --storage keychain --from-env --json --no-input`, or explicitly select `file` or `env`. Environment and explicit `--env-file` values still take precedence over saved keys. To move a version 0.2.0 key file into the native store, use `auth login --storage keychain --migrate-file`; the original is removed only after read-back verification. See [storage, headless use and migration](docs/authentication.md).
 
 Budgets enforce request counts and a reservation calculated from your `estimatePerImageUsd`. They are **not a provider-enforced dollar ceiling**. Inspect `plan` before spending. Requests and raw usage are recorded. An interrupted request with an unknown outcome stops rather than automatically charging again; see [recovery](docs/cli.md#resuming-and-recovery).
 

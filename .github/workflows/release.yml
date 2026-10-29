@@ -17,7 +17,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  credential-stores:
+    uses: ./.github/workflows/credential-stores.yml
   release:
+    needs: credential-stores
     if: github.repository == 'simple-post/simple-video'
     runs-on: ubuntu-latest
     timeout-minutes: 20

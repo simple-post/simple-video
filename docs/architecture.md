@@ -18,7 +18,9 @@ recipe JSON
 
 - `cli.ts`: commands, explicit setup approval, progress and error handling.
 - `terminal.ts`: readable output, setup/content prompts, hidden key entry and explicit JSON mode for automation.
-- `auth.ts`: private user-level credential storage, source precedence and key-free status reports; no provider requests.
+- `auth.ts`: explicit storage selection, source precedence, migration and key-free status reports.
+- `auth-file.ts`: private file storage and permission checks.
+- `native-credentials.ts`, `credential-worker.ts`: bounded native OS-store access, IPC-only secret transport and no silent fallback.
 - `project.ts`: recipe-relative paths, project initialization and validated export.
 - `spec.ts`: public schema, generic templates and deterministic storyboard expansion.
 - `runner.ts`: persistent request state, budget reservations, uncertain-outcome handling, shared cache and run locking.

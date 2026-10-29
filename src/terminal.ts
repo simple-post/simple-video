@@ -51,6 +51,7 @@ export function setupPreview(plan: ReturnType<typeof setupPlan>) {
 export async function confirmSetup(
   input: Readable = process.stdin,
   output: Writable = process.stderr,
+  label = "\nContinue with setup? [y/N] ",
 ): Promise<boolean> {
   const rl = createInterface({ input, output, terminal: false });
   try {
@@ -65,9 +66,7 @@ export async function confirmSetup(
           ),
         ),
       );
-      rl.question("\nContinue with setup? [y/N] ", (answer) =>
-        resolve(/^(y|yes)$/i.test(answer.trim())),
-      );
+      rl.question(label, (answer) => resolve(/^(y|yes)$/i.test(answer.trim())));
     });
   } finally {
     rl.close();
@@ -148,18 +147,22 @@ export function progressText(event: Fields): string | undefined {
 
 export function resultText(command: string, data: any): string {
   if (command === "auth login")
-    return `OpenAI key saved for Simple Video.\n  Location: ${data.path}\n  Storage: private local file, unencrypted (0600 on Unix).\n\nYou can now generate images in any project. No API request was made.`;
+    return `${data.saved ? "OpenAI key saved." : "Authentication preference saved."}\n  Storage: ${data.label}${data.path ? `\n  Location: ${data.path}` : ""}${data.service ? `\n  Service: ${data.service}\n  Account: ${data.account}` : ""}${data.migrated ? "\n  Original file removed after verifying the OS store." : ""}${data.otherFilePresent ? "\n  An old key file still exists. Remove it explicitly with auth logout --storage file when no longer needed." : ""}\n\n${data.storage === "env" ? "Supply OPENAI_API_KEY in your environment or use --env-file; no key was persisted." : "No provider API request was made."}`;
   if (command === "auth status")
     return data.configured
-      ? `OpenAI key configured.\n  Source: ${data.source}${data.path ? `\n  Location: ${data.path}` : ""}\n  No provider validation request was made.`
-      : "No OpenAI key configured. Run simple-video auth login. Local photos need no key.";
+      ? `OpenAI key configured.\n  Source: ${data.source}${data.path ? `\n  Location: ${data.path}` : ""}${data.account ? `\n  Account: ${data.account}` : ""}${data.otherFilePresent ? "\n  An old key file still exists; migrate or remove it explicitly when no longer needed." : ""}\n  No provider validation request was made.`
+      : `No OpenAI key configured.${data.label ? `\n  Storage: ${data.label}` : ""}${data.legacyFilePresent || data.otherFilePresent ? "\n  A legacy key file exists; choose storage with auth login or migrate it using --storage keychain --migrate-file." : ""}\nRun simple-video auth login. Local photos need no key.`;
   if (command === "auth logout")
     return `${data.removed ? "Saved key removed." : "No saved key to remove."}\n${data.note}`;
   if (command === "setup") {
     if (data.cancelled) return "Setup cancelled. Nothing was installed.";
+    if (data.authOnly)
+      return data.executed
+        ? `Authentication storage selected: ${data.authentication.label}\n${data.authentication.note}\n\nNext: ${data.next}`
+        : `Authentication preview only. No changes made.\n${data.authentication.choices.map((c: Fields) => `  ${c.storage}: ${c.label}${c.recommended ? " (recommended)" : ""}`).join("\n")}`;
     if (!data.executed)
-      return `${setupPreview(data)}\n\nPreview only. Nothing was downloaded or installed.`;
-    return `Setup complete.\n  Runtime: ${data.paths.home}\n\nNext: ${data.next}`;
+      return `${setupPreview(data)}${data.authentication ? `\n\nCredential storage: ${data.authentication.selected ?? "choose during setup"}\n${data.authentication.choices.map((c: Fields) => `  ${c.storage}: ${c.label}`).join("\n")}` : ""}\n\nPreview only. Nothing was downloaded or installed.`;
+    return `Setup complete.\n  Runtime: ${data.paths.home}\n  Credential storage: ${data.authentication?.label ?? "not selected"}\n\nNext: ${data.next}\nFor generated photos: simple-video auth login`;
   }
   if (command === "init")
     return `Project created.\n  Folder: ${data.directory}\n  Recipe: ${data.recipe}\n  Photos: ${data.local ? "local demo artwork; no API key needed" : "AI generation; use auth login once"}${data.local ? "" : `\n\nImage descriptions (${data.promptLocation} in simple-video.json):\n${(data.descriptions ?? []).map((d: Fields) => `  ${d.id}: ${d.prompt}`).join("\n")}`}\n\nNext: ${data.next}`;

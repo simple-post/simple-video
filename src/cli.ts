@@ -28,6 +28,15 @@ import {
   loadSavedKey,
   logout,
   keyFromStdin,
+  storage,
+  storageInfo,
+  storageChoices,
+  selection,
+  configureStorage,
+  authPlan,
+  legacyFilePresent,
+  migrateFile,
+  type Storage,
 } from "./auth.js";
 import {
   runtimePaths,
@@ -138,6 +147,52 @@ const interactive = () =>
     Boolean(process.stderr.isTTY),
   );
 const collect = (value: string, previous: string[]) => [...previous, value];
+async function chooseStorage(requested?: string): Promise<Storage> {
+  if (requested) return storage(requested);
+  const current = await selection();
+  if (!interactive()) {
+    if (current) return current;
+    throw new CliError(
+      "STORAGE_SELECTION_REQUIRED",
+      2,
+      "Choose --storage keychain, --storage file or --storage env. No key or preference was saved.",
+      await authPlan(),
+    );
+  }
+  const choices = storageChoices(),
+    defaultIndex = Math.max(
+      0,
+      choices.findIndex((c) => c.storage === current),
+    );
+  process.stderr.write(
+    "\nHow should Simple Video access your OpenAI key?\n" +
+      choices
+        .map(
+          (c, i) =>
+            `  ${i + 1}. ${c.label}${c.recommended ? " (recommended)" : ""}`,
+        )
+        .join("\n") +
+      "\n",
+  );
+  while (true) {
+    const answer = await askText(`Choose storage [${defaultIndex + 1}]: `),
+      choice = choices[Number(answer || defaultIndex + 1) - 1];
+    if (choice) return choice.storage;
+    process.stderr.write("Choose one of the listed numbers.\n");
+  }
+}
+const storageOption = () =>
+  new Option(
+    "--storage <backend>",
+    "keychain (native OS store), file (unencrypted), or env (no saved key)",
+  ).choices(["keychain", "file", "env"]);
+function explainStorage(chosen: Storage) {
+  if (terminal.json) return;
+  const info = storageInfo(chosen);
+  process.stderr.write(
+    `\nStorage: ${info.label}\n${"path" in info ? `  Location: ${info.path}\n  File is unencrypted; private Unix permissions are enforced.\n` : "service" in info ? `  Service: ${info.service}\n  Account: ${info.account}\n  Your OS may request permission or unlock. No file fallback.\n` : "  Set OPENAI_API_KEY in your shell or secret manager, or use --env-file.\n  Simple Video will not persist the key.\n"}`,
+  );
+}
 
 const auth = program
   .command("auth")
@@ -161,7 +216,54 @@ auth
       "save OPENAI_API_KEY from the environment or explicit --env-file",
     ).conflicts("stdin"),
   )
+  .addOption(storageOption())
+  .addOption(
+    new Option(
+      "--migrate-file",
+      "move the existing file key to the OS store, verify it, then remove the file",
+    ).conflicts(["stdin", "fromEnv"]),
+  )
   .action(async (o) => {
+    const chosen = await chooseStorage(o.storage);
+    explainStorage(chosen);
+    if (chosen === "env") {
+      if (o.stdin || o.fromEnv || o.migrateFile)
+        throw new CliError(
+          "INVALID_INPUT",
+          2,
+          "Environment storage does not import or save keys; omit input-source flags.",
+        );
+      const preference = await configureStorage(chosen);
+      result({
+        ...preference,
+        saved: false,
+        configured: Boolean(process.env.OPENAI_API_KEY),
+        validatedWithProvider: false,
+      });
+      return;
+    }
+    let migrate = Boolean(o.migrateFile);
+    if (
+      !migrate &&
+      chosen === "keychain" &&
+      !o.stdin &&
+      !o.fromEnv &&
+      interactive() &&
+      (await legacyFilePresent())
+    ) {
+      process.stderr.write(
+        "An existing file-based key was found. Move it into the OS store, verify it, then delete the file?\n",
+      );
+      migrate = await confirmSetup(
+        process.stdin,
+        process.stderr,
+        "Migrate and remove the original file? [y/N] ",
+      );
+    }
+    if (migrate) {
+      result(await migrateFile(chosen));
+      return;
+    }
     let key: string;
     if (o.stdin) {
       if (process.stdin.isTTY)
@@ -181,11 +283,11 @@ auth
           "Run simple-video auth login in a terminal to paste your key privately, or use --from-env / --stdin for automation.",
         );
       process.stderr.write(
-        `Save your OpenAI API key once for Simple Video.\n  Location: ${credentialsPath()}\n  Stored unencrypted in a private local file (0600 on Unix).\n  It is reused across projects. No API request is made.\n  Create a key in your OpenAI Platform dashboard if needed.\n\n`,
+        "The key is reused across projects. No provider API request is made.\n",
       );
       key = await askText("OpenAI API key (hidden): ", true);
     }
-    result(await saveKey(key));
+    result(await saveKey(key, chosen));
   });
 auth
   .command("status")
@@ -196,7 +298,10 @@ auth
   .description(
     "Remove the saved local key; leave environment/env files unchanged",
   )
-  .action(async () => result(await logout()));
+  .addOption(storageOption())
+  .action(async (o) =>
+    result(await logout(o.storage ? storage(o.storage) : undefined)),
+  );
 
 program
   .command("init")
@@ -315,7 +420,35 @@ program
   .option("-y, --yes", "approve the displayed setup plan without prompting")
   .option("--uv <executable>", "use an existing uv instead of downloading it")
   .option("--python <version>", "managed Python version", "3.12")
+  .addOption(storageOption())
+  .option(
+    "--auth-only",
+    "choose credential storage without installing the renderer or entering a key",
+  )
   .action(async (o) => {
+    if (o.dryRun) {
+      result({
+        ...(o.authOnly
+          ? { executed: false }
+          : await setup({ ...o, dryRun: true })),
+        authOnly: Boolean(o.authOnly),
+        authentication: await authPlan(
+          o.storage ? storage(o.storage) : undefined,
+        ),
+      });
+      return;
+    }
+    if (o.authOnly) {
+      const chosen = await chooseStorage(o.storage);
+      explainStorage(chosen);
+      result({
+        executed: true,
+        authOnly: true,
+        authentication: await configureStorage(chosen),
+        next: "simple-video auth login",
+      });
+      return;
+    }
     const plan = setupPlan(o);
     let approved = Boolean(o.yes);
     if (!o.dryRun && !terminal.json)
@@ -336,7 +469,14 @@ program
         return;
       }
     }
-    result(await setup({ ...o, approved, log }));
+    if (!approved) {
+      await setup({ ...o, approved: false });
+      return;
+    }
+    const chosen = await chooseStorage(o.storage);
+    explainStorage(chosen);
+    const installed = await setup({ ...o, approved, log });
+    result({ ...installed, authentication: await configureStorage(chosen) });
   });
 
 program

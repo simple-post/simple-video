@@ -65,28 +65,20 @@ Setup progress events contain `stage: "setup"`, a `step`, and `status: "started"
 
 ## Authentication
 
-`auth login` explains the destination, then reads your OpenAI key without echoing it. It stores `credentials.json` in a user-level config directory:
-
-| Platform | Default directory                            |
-| -------- | -------------------------------------------- |
-| macOS    | `~/Library/Application Support/simple-video` |
-| Linux    | `${XDG_CONFIG_HOME:-~/.config}/simple-video` |
-| Windows  | `%LOCALAPPDATA%/simple-video`                |
-
-The file is unencrypted. On Unix the directory must be owned by the user with `0700` permissions and the file with `0600` permissions. Symlinks and insecure stores are rejected. Windows file protection depends on the user directory's ACLs. Choose a private directory outside Git when overriding it. Credentials are not copied into recipes, run records or exports.
+`setup` and `auth login` offer `keychain` (native macOS/Linux/Windows storage), `file` (explicit unencrypted local storage), and `env` (no saved key). First-use automation must supply `--storage`; later unattended commands may reuse a saved selection. Use `setup --auth-only` to choose without runtime downloads. `--dry-run` changes nothing.
 
 ```sh
 simple-video auth login
+simple-video auth login --storage keychain --from-env --json --no-input
+simple-video auth login --storage env --json --no-input
+simple-video auth login --storage keychain --migrate-file
 simple-video auth status --json
-simple-video auth logout
-
-# Persist a key already supplied by your environment:
-simple-video auth login --from-env --json --no-input
-# Import an existing env file once without copying its value manually:
-simple-video --env-file ./my-private.env auth login --from-env --json --no-input
+simple-video auth logout --storage file
 ```
 
-`--stdin` reads a key from piped standard input. Do not put secret literals in shell commands; pipe from a secret manager instead. `--stdin` and `--from-env` are mutually exclusive. JSON/non-interactive login without an explicit input source exits 2 with `INPUT_REQUIRED`. Login/status make no network request and report `validatedWithProvider: false`; presence does not guarantee model access or credit. `auth status` never reveals a key or key prefix. Logout leaves environment variables and external env files untouched.
+`--stdin` and `--from-env` supply key input for persisted backends and cannot be combined. `--migrate-file` requires keychain storage and cannot be combined with input-source flags. Environment-only mode rejects import flags. Login uses hidden entry in a terminal, shows the store before input, and never prints a key. Status/login make no provider API request; `validatedWithProvider: false` means presence is not validation of credit/model access. OS stores may request system unlock/access independently of CLI stdin prompts; operations time out after 30 seconds. Use environment mode for unattended sessions without an unlocked store.
+
+Preferences live in `authentication.json`; only file mode writes `credentials.json`. Native entries are namespaced by config directory. File/OS failure never selects another backend. See [credential storage](authentication.md) for platform prerequisites, config locations, permissions, migration and error recovery.
 
 ## Image descriptions
 

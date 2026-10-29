@@ -23,7 +23,14 @@ import {
   loadSavedKey,
   logout,
   keyFromStdin,
+  selection,
+  configureStorage,
+  keyStatus,
+  migrateFile,
+  settingsPath,
 } from "../src/auth.js";
+import { saveFileKey } from "../src/auth-file.js";
+import { nativeStore, type NativeStore } from "../src/native-credentials.js";
 import { askText } from "../src/terminal.js";
 
 const fakeKey = "sk-proj-test-only-not-a-real-key-1234567890";
@@ -39,7 +46,7 @@ test("credential store is private, environment wins, logout removes only the sav
     delete process.env.OPENAI_API_KEY;
     assert.equal(await savedKey(), undefined);
     await assert.rejects(access(join(dir, "config")));
-    const result = await saveKey(fakeKey);
+    const result = await saveKey(fakeKey, "file");
     assert.equal(JSON.stringify(result).includes(fakeKey), false);
     assert.equal(await savedKey(), fakeKey);
     if (process.platform !== "win32") {
@@ -75,12 +82,12 @@ test(
       old = process.env.SIMPLE_VIDEO_CONFIG_DIR;
     try {
       process.env.SIMPLE_VIDEO_CONFIG_DIR = join(dir, "config");
-      await assert.rejects(saveKey("not a key"), /Nothing was saved/);
+      await assert.rejects(saveKey("not a key", "file"), /Nothing was saved/);
       await assert.rejects(access(join(dir, "config")));
-      await saveKey(fakeKey);
+      await saveKey(fakeKey, "file");
       await chmod(credentialsPath(), 0o644);
       await assert.rejects(savedKey(), /must be private/);
-      await assert.rejects(saveKey(fakeKey), /must be private/);
+      await assert.rejects(saveKey(fakeKey, "file"), /must be private/);
       await chmod(credentialsPath(), 0o600);
       await writeFile(credentialsPath(), "broken store", { mode: 0o600 });
       await assert.rejects(savedKey(), /unreadable or invalid/);
@@ -89,7 +96,7 @@ test(
       await writeFile(target, "untouched", { mode: 0o600 });
       await symlink(target, credentialsPath());
       await assert.rejects(savedKey(), /symlink/);
-      await assert.rejects(saveKey(fakeKey), /symlink/);
+      await assert.rejects(saveKey(fakeKey, "file"), /symlink/);
       assert.equal(await readFile(target, "utf8"), "untouched");
     } finally {
       if (old === undefined) delete process.env.SIMPLE_VIDEO_CONFIG_DIR;
@@ -136,15 +143,27 @@ test("CLI login via stdin/env works across projects and never prints the key", a
       env: { ...env, ...extra },
     });
   try {
-    await assert.rejects(invoke(["auth", "login"]), (e: unknown) => {
-      const error = e as { stderr: string };
-      assert.equal(JSON.parse(error.stderr).error.code, "INPUT_REQUIRED");
-      return true;
-    });
+    await assert.rejects(
+      invoke(["auth", "login", "--storage", "file"]),
+      (e: unknown) => {
+        const error = e as { stderr: string };
+        assert.equal(JSON.parse(error.stderr).error.code, "INPUT_REQUIRED");
+        return true;
+      },
+    );
     await assert.rejects(access(config));
     const child = spawn(
       process.execPath,
-      [bin, "--json", "--no-input", "auth", "login", "--stdin"],
+      [
+        bin,
+        "--json",
+        "--no-input",
+        "auth",
+        "login",
+        "--storage",
+        "file",
+        "--stdin",
+      ],
       { env, stdio: ["pipe", "pipe", "pipe"] },
     );
     let stdout = "",
@@ -193,6 +212,193 @@ test("CLI login via stdin/env works across projects and never prints the key", a
     );
     assert.match(await readFile(file, "utf8"), /OPENAI_API_KEY=/);
     await assert.rejects(invoke(["auth", "login", "--from-env", "--stdin"]));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("native migration verifies the destination, preserves the source on failure, and never falls back", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "simple-video-migration-")),
+    old = process.env.SIMPLE_VIDEO_CONFIG_DIR;
+  let value: string | null = null,
+    failRead = true;
+  const native: NativeStore = {
+    get: async () => (failRead ? "wrong-value" : value),
+    set: async (key) => {
+      value = key;
+    },
+    delete: async () => {
+      value = null;
+      return true;
+    },
+  };
+  try {
+    process.env.SIMPLE_VIDEO_CONFIG_DIR = join(dir, "config");
+    await saveFileKey(fakeKey); // Version 0.2.0 file, with no chosen backend.
+    const original = await readFile(credentialsPath(), "utf8");
+    assert.equal((await keyStatus()).legacyFilePresent, true);
+    await assert.rejects(savedKey(native), /legacy/);
+    await assert.rejects(migrateFile("keychain", native), /could not complete/);
+    assert.equal(await readFile(credentialsPath(), "utf8"), original);
+    assert.equal(await selection(), undefined);
+    failRead = false;
+    const result = await migrateFile("keychain", native);
+    assert.equal(result.migrated, true);
+    assert.equal(result.otherFilePresent, false);
+    assert.equal(await savedKey(native), fakeKey);
+    await assert.rejects(access(credentialsPath()));
+    assert.equal(
+      (await readFile(settingsPath(), "utf8")).includes(fakeKey),
+      false,
+    );
+    const unavailable: NativeStore = {
+      get: async () => {
+        throw Error("locked");
+      },
+      set: async () => {
+        throw Error("locked");
+      },
+      delete: async () => {
+        throw Error("locked");
+      },
+    };
+    await assert.rejects(saveKey(fakeKey, "keychain", unavailable), /locked/);
+    await assert.rejects(savedKey(unavailable), /locked/);
+    await assert.rejects(logout("keychain", unavailable), /locked/);
+    await assert.rejects(access(credentialsPath()));
+    assert.equal(await selection(), "keychain");
+    await configureStorage("env");
+    assert.equal(await savedKey(unavailable), undefined);
+    await assert.rejects(saveKey(fakeKey, "env", native), /never saves/);
+  } finally {
+    if (old === undefined) delete process.env.SIMPLE_VIDEO_CONFIG_DIR;
+    else process.env.SIMPLE_VIDEO_CONFIG_DIR = old;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("native worker transport hides keys from argv/env/errors and bounds hung native calls", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "simple-video-worker-"));
+  try {
+    const safe = join(dir, "safe.cjs"),
+      bad = join(dir, "bad.cjs"),
+      hung = join(dir, "hung.cjs");
+    await writeFile(
+      safe,
+      `process.once('message', m => { const ok = m.operation === 'set' && typeof m.secret === 'string' && !process.argv.join(' ').includes(m.secret) && !process.env.OPENAI_API_KEY; process.send({ok},()=>process.exit(0)); });`,
+    );
+    await nativeStore({ worker: safe, timeoutMs: 2000 }).set(fakeKey);
+    await writeFile(
+      bad,
+      `process.once('message', m => { process.stderr.write(m.secret || ''); process.send({ok:false,error:m.secret},()=>process.exit(0)); });`,
+    );
+    await assert.rejects(
+      nativeStore({ worker: bad, timeoutMs: 2000 }).set(fakeKey),
+      (e: unknown) => {
+        assert.equal(String(e).includes(fakeKey), false);
+        assert.match(String(e), /no fallback/);
+        return true;
+      },
+    );
+    await writeFile(hung, `setInterval(()=>{},1000);`);
+    const start = Date.now();
+    await assert.rejects(
+      nativeStore({ worker: hung, timeoutMs: 100 }).get(),
+      /could not complete/,
+    );
+    assert.ok(Date.now() - start < 5000);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a migration excludes concurrent login, logout and preference changes", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "simple-video-auth-race-")),
+    old = process.env.SIMPLE_VIDEO_CONFIG_DIR;
+  let release!: () => void,
+    started!: () => void,
+    value: string | null = null;
+  const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+    entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+  const native: NativeStore = {
+    set: async (key) => {
+      value = key;
+      started();
+      await gate;
+    },
+    get: async () => value,
+    delete: async () => true,
+  };
+  try {
+    process.env.SIMPLE_VIDEO_CONFIG_DIR = join(dir, "config");
+    await saveKey(fakeKey, "file");
+    const migration = migrateFile("keychain", native);
+    await entered;
+    try {
+      await assert.rejects(logout("file", native), /Another CLI writer/);
+      await assert.rejects(
+        saveKey(fakeKey + "-new", "file", native),
+        /Another CLI writer/,
+      );
+      await assert.rejects(configureStorage("env"), /Another CLI writer/);
+      assert.equal(await selection(), "file");
+    } finally {
+      release();
+    }
+    await migration;
+    assert.equal(await savedKey(native), fakeKey);
+    await assert.rejects(access(credentialsPath()));
+  } finally {
+    release();
+    if (old === undefined) delete process.env.SIMPLE_VIDEO_CONFIG_DIR;
+    else process.env.SIMPLE_VIDEO_CONFIG_DIR = old;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("setup and auth expose storage choices without downloading or silently saving keys", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "simple-video-storage-cli-")),
+    config = join(dir, "config");
+  const env = {
+    ...process.env,
+    OPENAI_API_KEY: "",
+    SIMPLE_VIDEO_CONFIG_DIR: config,
+  };
+  const invoke = (args: string[]) =>
+    exec(process.execPath, [bin, "--json", "--no-input", ...args], { env });
+  try {
+    const preview = JSON.parse(
+      (await invoke(["setup", "--dry-run", "--auth-only", "--storage", "env"]))
+        .stdout,
+    );
+    assert.equal(preview.data.authentication.selected, "env");
+    assert.equal(preview.data.authentication.choices.length, 3);
+    await assert.rejects(access(config));
+    await assert.rejects(invoke(["setup", "--auth-only"]), (e: unknown) => {
+      assert.equal(
+        JSON.parse((e as { stderr: string }).stderr).error.code,
+        "STORAGE_SELECTION_REQUIRED",
+      );
+      return true;
+    });
+    await invoke(["setup", "--auth-only", "--storage", "env"]);
+    const pref = JSON.parse(
+      await readFile(join(config, "authentication.json"), "utf8"),
+    );
+    assert.equal(pref.storage, "env");
+    await assert.rejects(access(join(config, "credentials.json")));
+    const status = JSON.parse((await invoke(["auth", "status"])).stdout);
+    assert.equal(status.data.configured, false);
+    assert.equal(status.data.storage, "env");
+    await assert.rejects(
+      invoke(["auth", "login", "--storage", "env", "--from-env"]),
+    );
+    await invoke(["auth", "login", "--storage", "env"]);
+    await assert.rejects(access(join(config, "credentials.json")));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
