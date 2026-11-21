@@ -54,7 +54,7 @@ git push origin video-v0.1.0
 
 New publisher configurations must complete a successful publish within npm's activation window (currently two days). Validate it with the next real, authorized release; do not invent a version just to test authentication. If it expires, recreate the configuration before the next release.
 
-Keep the GitHub repository private unless a visibility change is explicitly requested. A public npm package can be published from a private repository, but npm provenance attestations are not generated for private repositories. Do not force `--provenance` while the repo remains private. [npm trusted-publisher documentation](https://docs.npmjs.com/trusted-publishers/).
+npm generates provenance automatically for public packages published from a public GitHub repository through trusted publishing. Repository visibility does not change the trusted publisher's repository identity or workflow filename. [npm trusted-publisher documentation](https://docs.npmjs.com/trusted-publishers/#automatic-provenance-generation).
 
 ## Subsequent releases
 

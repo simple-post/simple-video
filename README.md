@@ -2,9 +2,17 @@
 
 Tell your AI agent what video you want. It turns your brief into an editable recipe, uses your photos or generates new ones, adds subtle depth motion, and returns a vertical MP4 you can review. The agent runs the CLI from the same machine as your files.
 
-## Start by asking your agent
+## Install the agent skill
 
-Paste one of these into a terminal-capable agent such as Codex:
+From your project folder, run this and choose your agent:
+
+```sh
+npx skills add simple-post/simple-video --skill simple-video
+```
+
+The skill gives a terminal-capable agent the instructions to run Simple Video. It can invoke the CLI through npm. Use Node.js 24 or later.
+
+Then ask your agent for a video:
 
 > Use `@simple-post/video` to make a 9-second vertical parallax video of a tiny robot trying to order coffee. Create three realistic photos with a consistent character and use short captions. Keep the motion subtle. Give me the MP4 and the editable recipe.
 
@@ -19,21 +27,15 @@ For a free first run, ask it to make a demo with the built-in artwork. For a mat
 
 Once set up, give the agent the brief. It can pick the layout, write the prompts or order the photos, validate the plan, render, fix visual issues using the same images, and return the finished file. The CLI creates the video locally. It sends image-generation requests to OpenAI only if the agent runs generation with `--execute`.
 
-## Give your agent the instructions
+## Install the skill from npm
 
-It can read the bundled skill straight from npm, even on a machine without a global install:
-
-```sh
-npx --yes --package @simple-post/video simple-video skill --print
-```
-
-To make the skill discoverable in Codex, run this once from the project directory. Start a new session if the current session hasn’t picked it up yet.
+The npm package also bundles the skill. In Codex, run this from your project folder:
 
 ```sh
-npx --yes --package @simple-post/video simple-video skill --output .agents/skills/simple-video
+npx --yes --package=@simple-post/video -- simple-video skill --output .agents/skills/simple-video
 ```
 
-Then say, for example, “Use `$simple-video` to make a 9-second slideshow from these photos.” If you use another agent with skill support, give it the same skill folder using that agent’s installation path. An agent that can run terminal commands can also read `skill --print` on demand.
+In Codex, invoke it with `$simple-video`. For another agent, use that agent’s skill directory. A terminal-capable agent can also use `npx --yes --package=@simple-post/video -- simple-video skill --print` to read the instructions on demand.
 
 ## Commands your agent runs
 
@@ -86,4 +88,4 @@ The agent reads the exported path at `data.export.video` and checks the contact 
 - The parallax effect adds camera motion to still photographs. Stronger motion can stretch edges. Music is optional and new projects are silent by default.
 - Your agent can pass the finished MP4 to SimplePost when you ask it to publish or schedule. Video generation and exporting require no SimplePost account.
 
-The npm package is public. The GitHub source repository is currently private. See the package’s `docs/` folder for the [CLI contract](docs/cli.md), [renderer setup](docs/setup.md), [recipes and music](docs/recipes.md), and [credential storage](docs/authentication.md). The TypeScript CLI is MIT licensed. DepthFlow is installed separately under AGPL-3.0. See [third-party notices](THIRD_PARTY_NOTICES.md).
+The TypeScript CLI is MIT licensed. DepthFlow is installed separately under AGPL-3.0. See [third-party notices](THIRD_PARTY_NOTICES.md) and [contributing](CONTRIBUTING.md). The [CLI contract](docs/cli.md), [renderer setup](docs/setup.md), [recipes and music](docs/recipes.md), and [credential storage](docs/authentication.md) are also bundled in the npm package.

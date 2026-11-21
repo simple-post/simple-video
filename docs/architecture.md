@@ -1,6 +1,6 @@
 # Architecture
 
-Simple Video is a local TypeScript CLI with a separately installed Python renderer. The original engine was developed for Paleoflux; this extraction contains reusable code, generic templates and original test fixtures rather than production media, credentials or dated batch scripts.
+Simple Video is a local TypeScript CLI with a separately installed Python renderer. It includes reusable templates and original test fixtures.
 
 ```text
 recipe JSON
@@ -34,7 +34,7 @@ recipe JSON
 
 DepthFlow is executed through argument arrays without a shell. The CLI does not modify its source or bundle Python wheels in the npm artifact. npm dependencies are locked; top-level Python renderer versions and the depth-model revision are pinned. Python transitive resolution and GPU drivers can still differ between machines.
 
-Generation responses and local receipts may contain prompts and provider usage. Treat the project cache as private. Generated assets, credentials and runtime files are not part of the package or Git repository. The public npm package is `@simple-post/video`. `.github/workflows/release.yml` publishes authorized `video-v*` tags through npm trusted publishing (OIDC), with package validation and no stored GitHub npm token. The GitHub repository can remain private; provenance is generated only when upstream npm supports it for the repository visibility. See [releases](releases.md).
+Generation responses and local receipts may contain prompts and provider usage. Treat the project cache as private. Keep generated assets, credentials and runtime files outside the package and Git repository. The public npm package is `@simple-post/video`. `.github/workflows/release.yml` publishes authorized `video-v*` tags through npm trusted publishing (OIDC). See [releases](releases.md).
 
 ## Scope of this preview
 

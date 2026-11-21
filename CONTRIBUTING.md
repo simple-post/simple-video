@@ -6,4 +6,6 @@ Tests use mocks and original fixtures. No real image API key is needed. To verif
 
 Prefer small reproducible recipe examples. Add meaningful tests for request retries, costs, path handling and media output when those behaviors change. Update docs and the agent skill for public command changes. Keep scope focused on photo-parallax production; publishing belongs to SimplePost.
 
-`npm run check:package` validates the built artifact without publishing. Releases follow the same tag-driven npm trusted-publishing approach as core; see [release instructions](docs/releases.md). Do not create release tags or publish packages without maintainer authorization. The GitHub repository stays private unless explicitly changed.
+`skills/simple-video` is the source for both the skills.sh install and the skill bundled on npm. Keep those instructions compatible with the current public npm release. If a new instruction requires a feature that has yet to ship, document the minimum CLI version when that feature is released.
+
+`npm run check:package` validates the built artifact. Maintainers publish npm packages from matching release tags using [trusted publishing](docs/releases.md).
