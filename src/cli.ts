@@ -1,7 +1,7 @@
 import { Command, CommanderError, Option } from "commander";
 import { resolve, join } from "node:path";
 import { readFileSync } from "node:fs";
-import { readdir, cp } from "node:fs/promises";
+import { readdir, cp, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { SpecSchema, planExperiment } from "./spec.js";
@@ -311,13 +311,22 @@ program
   .argument("[directory]", "destination (default: --project)")
   .option(
     "--template <name>",
-    "single (default), slideshow, comparison or challenge",
+    "single, slideshow, comparison or challenge (inferred for --photo)",
   )
   .option(
     "--prompt <text>",
     "describe a photo; repeat for each slideshow/challenge photo",
     collect,
     [],
+  )
+  .addOption(
+    new Option(
+      "--photo <path>",
+      "use an existing photo; repeat in display order",
+    )
+      .argParser(collect)
+      .default([])
+      .conflicts(["prompt", "example", "local", "hero", "opponent", "setting"]),
   )
   .option(
     "--caption <text>",
@@ -352,12 +361,17 @@ program
       single: "loop",
       challenge: "challenge",
     } as const;
-    const type = types[(o.template ?? "single") as keyof typeof types];
+    const type =
+      types[
+        (o.template ??
+          (o.photo.length > 1 ? "slideshow" : "single")) as keyof typeof types
+      ];
     if (!type)
       throw Error(
         "Unknown template; use slideshow, comparison, single or challenge",
       );
     const content: InitContent = {
+      photos: o.photo,
       prompts: o.prompt,
       captions: o.caption,
       duration: o.duration,
@@ -366,7 +380,7 @@ program
       opponent: o.opponent,
       setting: o.setting,
     };
-    if (!o.local && !o.example) {
+    if (!o.local && !o.example && !o.photo.length) {
       if (type === "battle") {
         for (const [field, label] of [
           ["hero", "Who is the fixed side? "],
@@ -421,6 +435,12 @@ program
   .option("--uv <executable>", "use an existing uv instead of downloading it")
   .option("--python <version>", "managed Python version", "3.12")
   .addOption(storageOption())
+  .addOption(
+    new Option(
+      "--runtime-only",
+      "install the renderer without reading or changing credential preferences",
+    ).conflicts(["authOnly", "storage"]),
+  )
   .option(
     "--auth-only",
     "choose credential storage without installing the renderer or entering a key",
@@ -432,9 +452,13 @@ program
           ? { executed: false }
           : await setup({ ...o, dryRun: true })),
         authOnly: Boolean(o.authOnly),
-        authentication: await authPlan(
-          o.storage ? storage(o.storage) : undefined,
-        ),
+        ...(o.runtimeOnly
+          ? { runtimeOnly: true }
+          : {
+              authentication: await authPlan(
+                o.storage ? storage(o.storage) : undefined,
+              ),
+            }),
       });
       return;
     }
@@ -473,10 +497,15 @@ program
       await setup({ ...o, approved: false });
       return;
     }
-    const chosen = await chooseStorage(o.storage);
-    explainStorage(chosen);
+    const chosen = o.runtimeOnly ? undefined : await chooseStorage(o.storage);
+    if (chosen) explainStorage(chosen);
     const installed = await setup({ ...o, approved, log });
-    result({ ...installed, authentication: await configureStorage(chosen) });
+    result({
+      ...installed,
+      ...(chosen
+        ? { authentication: await configureStorage(chosen) }
+        : { runtimeOnly: true }),
+    });
   });
 
 program
@@ -489,8 +518,12 @@ program
     "test the actual GPU/OpenGL renderer with supplied synthetic depth; no model downloads",
   )
   .option("--depth", "load/download and test the local depth model")
+  .option(
+    "--runtime-only",
+    "check the renderer without accessing the credential store",
+  )
   .action(async (o) => {
-    const auth = await keyStatus(opts().envFile);
+    const auth = o.runtimeOnly ? undefined : await keyStatus(opts().envFile);
     const paths = runtimePaths();
     const checks = await Promise.all(
       ["ffmpeg", "ffprobe"].map(async (name) => ({
@@ -517,8 +550,9 @@ program
       graphics,
       paths,
       root: root(),
-      openaiKeyPresent: auth.configured,
-      authentication: auth,
+      ...(auth
+        ? { openaiKeyPresent: auth.configured, authentication: auth }
+        : {}),
       publishing: false,
       hint: ready
         ? "Use doctor --check-render to verify GPU rendering"
@@ -558,6 +592,12 @@ program
   )
   .option("--dry-run", "return the plan without generating or rendering")
   .option("--images-only", "generate/import images and stop before rendering")
+  .addOption(
+    new Option(
+      "--output <directory>",
+      "export the validated MP4 and metadata here after rendering",
+    ).conflicts("imagesOnly"),
+  )
   .option(
     "--retry-uncertain",
     "accept possible duplicate charges for a previously interrupted request",
@@ -598,17 +638,22 @@ program
         : name === "fixture"
           ? new FixtureImages()
           : new OpenAIImages();
-    result(
-      summary(
-        await runExperiment(spec, provider, {
-          root: root(),
-          id: o.id,
-          imagesOnly: o.imagesOnly,
-          retryUncertain: o.retryUncertain,
-          log,
-        }),
-      ),
-    );
+    const run = await runExperiment(spec, provider, {
+      root: root(),
+      id: o.id,
+      imagesOnly: o.imagesOnly,
+      retryUncertain: o.retryUncertain,
+      log,
+    });
+    result({
+      ...summary(run),
+      ...(run.status === "ready"
+        ? { contactSheet: join(root(), "runs", run.id, "contact-sheet.jpg") }
+        : {}),
+      ...(o.output
+        ? { export: await exportRun(root(), run.id, o.output, undefined, true) }
+        : {}),
+    });
   });
 
 program
@@ -710,10 +755,19 @@ program
   .command("skill")
   .description("Locate or copy the bundled portable agent skill")
   .option("--output <directory>", "copy the skill to this new directory")
+  .addOption(
+    new Option("--print", "print the bundled SKILL.md as Markdown").conflicts(
+      "output",
+    ),
+  )
   .action(async (o) => {
     const source = fileURLToPath(
       new URL("../skills/simple-video/", import.meta.url),
     );
+    if (o.print) {
+      process.stdout.write(await readFile(join(source, "SKILL.md"), "utf8"));
+      return;
+    }
     if (o.output) {
       if (await exists(resolve(o.output)))
         throw Error("Skill destination already exists");

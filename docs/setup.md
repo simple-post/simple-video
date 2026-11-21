@@ -13,8 +13,8 @@ simple-video doctor --check-render
 For scripts and agents, inspect the plan and pass explicit approval:
 
 ```sh
-simple-video setup --dry-run --json --no-input
-simple-video setup --yes --storage env --json --no-input
+simple-video setup --runtime-only --dry-run --json --no-input
+simple-video setup --runtime-only --yes --json --no-input
 ```
 
 `--json`, `--no-input`, or non-terminal stdin disables prompts; without `--yes`, setup exits 2 with `CONFIRMATION_REQUIRED` and includes the plan in `error.details`. `--quiet` suppresses progress but never skips approval. `--dry-run` makes no changes, even when combined with `--yes`. Approval applies only to runtime installation; paid generation still needs `create --execute`.
@@ -28,6 +28,8 @@ System Python and shell profiles are not changed. No sudo command is executed. S
 ## Credential storage choice
 
 Setup also offers native OS storage (recommended), an explicit private file, or environment-only access. `--storage keychain|file|env` supplies the choice for automation; an existing selection can be reused. Full setup asks after runtime approval and saves the choice only after successful installation. `setup --auth-only` changes only the preference without downloads or key entry. `setup --dry-run` includes the choices and changes nothing. Authenticate afterward with `auth login`; see [storage and migration](authentication.md).
+
+Use `setup --runtime-only` when you only need the renderer. It skips the credential selection step and leaves the saved preference alone.
 
 ## Locations and overrides
 
@@ -51,7 +53,7 @@ Use `--home PATH` or `SIMPLE_VIDEO_HOME` for a different home. `--uv /path/to/uv
 - `tar` for uv archive extraction (including the Windows archive).
 - Internet access for setup and the first depth-model download. Generation additionally needs your own provider key.
 
-`doctor` checks dependency presence without loading weights. `doctor --depth` downloads/loads the pinned depth model. `doctor --check-render` renders a tiny H264 clip with synthetic depth; it checks the graphics path without downloading a model or making a paid API call. Before paid full-video generation, create performs this graphics probe. `--images-only` skips rendering preflight.
+`doctor` checks dependency presence without loading weights. Add `--runtime-only` to skip the credential store. `doctor --depth` downloads/loads the pinned depth model. `doctor --check-render` renders a tiny H264 clip with synthetic depth; it checks the graphics path without downloading a model or making a paid API call. Before paid full-video generation, create performs this graphics probe. `--images-only` skips rendering preflight.
 
 ## Support status
 

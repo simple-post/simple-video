@@ -1,6 +1,6 @@
 interface:
   display_name: "Simple Video"
   short_description: "Create subtle photo-parallax videos from the CLI"
-  default_prompt: "Use $simple-video to plan, create and review a photo-parallax video in a local project."
+  default_prompt: "Use $simple-video to turn my video brief or photos into a finished MP4."
 policy:
   allow_implicit_invocation: true

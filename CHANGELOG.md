@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0 — 2026-11-21
+
+- Read the bundled agent instructions from any npm install with `skill --print`. The README starts with natural-language requests an agent can carry through to a local MP4.
+- Use `init --photo` for supplied photos. Repeat it in playback order to create a slideshow with no image API requests.
+- Use `create --output` to render and export in the same call. Results include a contact sheet and the finished file path. Repeating the command can reuse an identical export.
+- Use `setup --runtime-only` to install the renderer after approval without choosing or changing credential storage.
+
 ## 0.3.0 — 2026-10-29
 
 - Setup and authentication offer native OS storage (macOS Keychain, Linux Secret Service, Windows Credential Manager), explicit file storage or environment-only access. `--storage` provides the choice for automation, and `setup --auth-only` changes it without runtime downloads.

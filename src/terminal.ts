@@ -162,10 +162,10 @@ export function resultText(command: string, data: any): string {
         : `Authentication preview only. No changes made.\n${data.authentication.choices.map((c: Fields) => `  ${c.storage}: ${c.label}${c.recommended ? " (recommended)" : ""}`).join("\n")}`;
     if (!data.executed)
       return `${setupPreview(data)}${data.authentication ? `\n\nCredential storage: ${data.authentication.selected ?? "choose during setup"}\n${data.authentication.choices.map((c: Fields) => `  ${c.storage}: ${c.label}`).join("\n")}` : ""}\n\nPreview only. Nothing was downloaded or installed.`;
-    return `Setup complete.\n  Runtime: ${data.paths.home}\n  Credential storage: ${data.authentication?.label ?? "not selected"}\n\nNext: ${data.next}\nFor generated photos: simple-video auth login`;
+    return `Setup complete.\n  Runtime: ${data.paths.home}${data.authentication ? `\n  Credential storage: ${data.authentication.label}` : ""}\n\nNext: ${data.next}\nFor generated photos: simple-video auth login`;
   }
   if (command === "init")
-    return `Project created.\n  Folder: ${data.directory}\n  Recipe: ${data.recipe}\n  Photos: ${data.local ? "local demo artwork; no API key needed" : "AI generation; use auth login once"}${data.local ? "" : `\n\nImage descriptions (${data.promptLocation} in simple-video.json):\n${(data.descriptions ?? []).map((d: Fields) => `  ${d.id}: ${d.prompt}`).join("\n")}`}\n\nNext: ${data.next}`;
+    return `Project created.\n  Folder: ${data.directory}\n  Recipe: ${data.recipe}\n  Photos: ${data.sourcePhotos ? `${data.sourcePhotos.length} existing photo(s)` : data.local ? "local demo artwork" : "AI generation; use auth login once"}${data.local ? "" : `\n\nImage descriptions (${data.promptLocation} in simple-video.json):\n${(data.descriptions ?? []).map((d: Fields) => `  ${d.id}: ${d.prompt}`).join("\n")}`}\n\nNext: ${data.next}`;
   if (command === "plan" || (command === "create" && data.executed === false)) {
     const rows = [
       data.name,
@@ -207,7 +207,11 @@ export function resultText(command: string, data: any): string {
       );
     rows.push(
       `  Runtime: ${data.paths.home}`,
-      `  OpenAI key: ${data.openaiKeyPresent ? `configured (${data.authentication?.source ?? "environment"})` : "not set; run simple-video auth login for AI images"}`,
+      ...(data.authentication
+        ? [
+            `  OpenAI key: ${data.openaiKeyPresent ? `configured (${data.authentication.source})` : "not set; run simple-video auth login for AI images"}`,
+          ]
+        : []),
       "",
       data.hint,
     );
@@ -228,7 +232,13 @@ export function resultText(command: string, data: any): string {
         ? "Video variant ready."
         : `Video ${data.id}: ${data.status}.`,
     ];
-    if (data.output) rows.push(`  Video: ${data.output}`);
+    if (data.export)
+      rows.push(
+        `  Video: ${data.export.video}`,
+        `  Metadata: ${data.export.manifest}`,
+      );
+    else if (data.output) rows.push(`  Video: ${data.output}`);
+    if (data.contactSheet) rows.push(`  Contact sheet: ${data.contactSheet}`);
     if (data.report)
       rows.push(
         `  ${data.report.duration}s · ${data.report.width}×${data.report.height} · ${data.report.frames} frames`,

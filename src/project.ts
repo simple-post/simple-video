@@ -1,8 +1,30 @@
-import { dirname, resolve, join } from "node:path";
-import { mkdir, copyFile, writeFile, access } from "node:fs/promises";
+import {
+  basename,
+  dirname,
+  resolve,
+  join,
+  relative,
+  isAbsolute,
+  sep,
+} from "node:path";
+import {
+  mkdir,
+  copyFile,
+  writeFile,
+  access,
+  stat,
+  realpath,
+} from "node:fs/promises";
 import sharp from "sharp";
 import { SpecSchema, planExperiment, template, type Spec } from "./spec.js";
-import { CliError, readJson, writeJson, safeId, fileHash } from "./io.js";
+import {
+  CliError,
+  readJson,
+  writeJson,
+  safeId,
+  fileHash,
+  stable,
+} from "./io.js";
 import { type Run } from "./runner.js";
 
 export async function readRecipe(file: string): Promise<Spec> {
@@ -55,6 +77,7 @@ export function describeImages(spec: Spec) {
   }));
 }
 export type InitContent = {
+  photos?: string[];
   prompts?: string[];
   captions?: string[];
   duration?: number;
@@ -168,8 +191,64 @@ export async function initProject(
       2,
       "--local creates geometric demo artwork; omit it to use your image descriptions.",
     );
-  const spec = customizeTemplate(type, content);
+  const photos = await Promise.all(
+    (content.photos ?? []).map(async (photo) => {
+      const path = resolve(photo);
+      const info = await stat(path).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT")
+          throw new CliError(
+            "PHOTO_NOT_FOUND",
+            2,
+            `Photo does not exist: ${path}`,
+          );
+        throw error;
+      });
+      if (!info.isFile())
+        throw new CliError("INVALID_INPUT", 2, `Photo must be a file: ${path}`);
+      return path;
+    }),
+  );
+  if (
+    photos.length &&
+    (type === "battle" ||
+      (type === "loop"
+        ? photos.length !== 1
+        : photos.length < 2 || photos.length > 12))
+  )
+    throw new CliError(
+      "INVALID_INPUT",
+      2,
+      "--photo accepts one file for a single shot or 2–12 files for a slideshow or challenge. For a local comparison, use image.files in the recipe.",
+    );
+  const spec = customizeTemplate(
+    type,
+    photos.length
+      ? {
+          ...content,
+          prompts: photos.map((path) => `Local photo: ${basename(path)}`),
+        }
+      : content,
+  );
   await mkdir(dir, { recursive: true });
+  if (photos.length) {
+    const assets = planExperiment(spec).assets;
+    const physicalDir = await realpath(dir);
+    const paths = await Promise.all(
+      photos.map(async (photo) => {
+        const path = relative(dir, photo);
+        // A shell's cwd can use the physical location of a macOS system alias.
+        // Keep in-project photos relative even when the input used that alias.
+        if (!isAbsolute(path) && !path.startsWith(`..${sep}`)) return path;
+        const physicalPath = relative(physicalDir, await realpath(photo));
+        return !isAbsolute(physicalPath) && !physicalPath.startsWith(`..${sep}`)
+          ? physicalPath
+          : path;
+      }),
+    );
+    spec.image.files = Object.fromEntries(
+      assets.map((asset, i) => [asset.id, paths[i]!]),
+    );
+  }
   if (local) {
     const assets = planExperiment(spec).assets;
     await mkdir(join(dir, "photos"), { recursive: true });
@@ -205,7 +284,8 @@ export async function initProject(
   return {
     directory: dir,
     recipe,
-    local,
+    local: local || photos.length > 0,
+    ...(photos.length ? { sourcePhotos: photos } : {}),
     descriptions: describeImages(spec),
     promptLocation:
       spec.type === "loop"
@@ -221,6 +301,7 @@ export async function exportRun(
   id: string,
   destination: string,
   variant?: string,
+  reuseMatching = false,
 ) {
   const run = await readJson<Run>(
     resolve(root, "runs", safeId(id), "run.json"),
@@ -250,7 +331,6 @@ export async function exportRun(
   const stem = variant ? `${id}-${variant}` : id;
   const media = join(dir, `${stem}.mp4`),
     manifest = join(dir, `${stem}.json`);
-  await copyFile(selected.output, media, 1); // COPYFILE_EXCL: never overwrite user files.
   const credit =
     "soundtrack" in selected ? selected.soundtrack?.track?.credit : undefined;
   const text =
@@ -264,10 +344,47 @@ export async function exportRun(
     sha256: selected.report.sha256,
     report: selected.report,
     sourceRun: id,
-    variant,
+    ...(variant ? { variant } : {}),
     published: false,
   };
-  await writeJson(manifest, result);
+  // Accept only an identical export on a retried create. Exclusive writes
+  // preserve unrelated files, including concurrent exports to this directory.
+  const checkManifest = async () => {
+    const existing = await readJson(manifest).catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      },
+    );
+    if (
+      existing !== undefined &&
+      (!reuseMatching || stable(existing) !== stable(result))
+    )
+      throw new CliError(
+        "EXPORT_EXISTS",
+        1,
+        `Export metadata already exists: ${manifest}. Choose a new directory.`,
+      );
+  };
+  await checkManifest();
+  await copyFile(selected.output, media, 1).catch(
+    async (error: NodeJS.ErrnoException) => {
+      if (error.code !== "EEXIST") throw error;
+      if (!reuseMatching || (await fileHash(media)) !== result.sha256)
+        throw new CliError(
+          "EXPORT_EXISTS",
+          1,
+          `Export video already exists: ${media}. Choose a new directory.`,
+        );
+    },
+  );
+  await writeFile(manifest, `${JSON.stringify(result, null, 2)}\n`, {
+    flag: "wx",
+    mode: 0o600,
+  }).catch(async (error: NodeJS.ErrnoException) => {
+    if (error.code !== "EEXIST") throw error;
+    await checkManifest();
+  });
   return {
     ...result,
     manifest,

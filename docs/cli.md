@@ -32,14 +32,17 @@ Errors also use stderr and a nonzero exit code:
 
 Human-mode errors show a short `Error: ...` message instead of a JSON envelope. Use `--json` to inspect structured error codes, validation issues and details.
 
+`simple-video skill --print` streams the bundled Markdown directly to stdout, like help. Use `skill --output DIRECTORY` to copy it into a new skill folder.
+
 ## Setup approval
 
 ```sh
 simple-video setup                         # show plan, then ask [y/N]
 simple-video setup --dry-run               # preview only; no downloads or prompt
-simple-video setup --yes                   # explicit approval, readable terminal progress
-simple-video setup --yes --json --no-input # unattended, machine-readable install
+simple-video setup --runtime-only --yes --json --no-input
 ```
+
+`--runtime-only` leaves credential preferences alone and can be used on a fresh machine. For full unattended setup, pass `--storage keychain|file|env` or reuse an existing selection.
 
 Without `--yes`, setup can ask only when stdin and stderr are terminals and neither `--json` nor `--no-input` is set. Otherwise it exits 2 with `CONFIRMATION_REQUIRED` before creating runtime files or making network requests; `error.details.plan` contains the proposed installation. A declined interactive prompt returns `executed: false` and `cancelled: true`, exiting 0. `--dry-run` always prevents installation, even with `--yes`. The flag belongs to setup and does not bypass `create --execute`.
 
@@ -95,6 +98,8 @@ simple-video init ./fight --template comparison \
 
 Repeat `--prompt` 2–12 times for slideshow/challenge templates. Repeat `--caption` once per photo to add text, or omit it for no captions. `--duration` is per photo; it defaults to three seconds for those templates. Terminal initialization without prompts asks for three slideshow/challenge descriptions. Comparison initialization asks for missing hero, opponent and setting; edit round counts and timing in the recipe. `--name` sets the title.
 
+For existing images, use `init DIR --photo "one.jpg" --photo "two.jpg"`. One file defaults to a single shot and multiple files default to a slideshow. Paths are relative to the invocation directory and stored relative to the recipe where possible. Files are referenced in place. Captions and per-photo duration work the same way as for prompts. For local comparisons, map each ID from `plan` in `image.files`.
+
 `--local` explicitly creates geometric sample artwork and cannot be combined with image-description flags. `--example` explicitly writes preset descriptions for later editing. `init` makes no generation calls. The recipe stores single-image text in `prompt`, slideshow/challenge text in `shots[].prompt`, and comparison subjects/setting in `hero`, `opponent`, `environment` and `rounds`. Human `init` and `plan` output shows these descriptions. JSON plans retain the complete expanded prompts in `assets[].prompt` and add a short `descriptions` list for review.
 
 ## Planning and paid generation
@@ -109,6 +114,8 @@ simple-video --project ./story create --id episode-01 --execute
 Use `.data` from `schema` as the JSON Schema. `plan` reports exact asset IDs, scenes, duration, estimate and `budgetFits`. A recipe containing `image.files` defaults to the local provider; otherwise the provider is OpenAI. Use `--provider fixture` for synthetic test images. The OpenAI provider rejects recipes containing `image.files` to avoid ambiguity. Local input requires a file for every planned asset. Mixing generated and local photos in one create command is not currently supported; generate images first, then use them in a local-photo recipe.
 
 Without `--execute`, an OpenAI create returns a plan and sends no generation request. Local and fixture creates run without that flag. `--dry-run` prevents all generation and rendering regardless of provider. `--images-only` stops at `images-ready`; call create again without it to render the cached images, or use render to create a variant.
+
+Add `create --output DIRECTORY` to export the ready run in the same call. The MP4 and metadata paths are in `data.export`, and `data.contactSheet` points at the contact sheet for a completed render. Retrying `create --output` with the same verified bytes and matching metadata can reuse its export. A different video or conflicting metadata returns `EXPORT_EXISTS`. Choose a new output directory in that case. `--output` and `--images-only` are mutually exclusive.
 
 ## Resuming and recovery
 

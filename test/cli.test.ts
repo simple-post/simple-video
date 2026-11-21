@@ -298,6 +298,20 @@ test("setup refuses unapproved downloads before creating its runtime directory",
       "--no-input",
     ]);
     assert.equal(preview.data.executed, false);
+    const runtimeOnly = await cli([
+      "--home",
+      home,
+      "setup",
+      "--runtime-only",
+      "--dry-run",
+      "--yes",
+    ]);
+    assert.equal(runtimeOnly.data.runtimeOnly, true);
+    assert.equal(runtimeOnly.data.authentication, undefined);
+    await assert.rejects(
+      cli(["--home", home, "setup", "--runtime-only"]),
+      /CONFIRMATION_REQUIRED/,
+    );
     await assert.rejects(access(home));
   } finally {
     if (old === undefined) delete process.env.SIMPLE_VIDEO_HOME;
@@ -420,9 +434,16 @@ test("readable output is available for humans and explicit JSON stays parseable"
 test("local CLI create, cached rerender and export work from a foreign cwd without credentials", async () => {
   const dir = await mkdtemp(join(tmpdir(), "simple-video-e2e-"));
   try {
-    await initProject(dir, "loop", true);
+    const demo = await initProject(join(dir, "demo"), "loop", true);
+    const photosDir = join(demo.directory, "photos");
+    await cli(
+      ["init", dir, "--photo", "loop.png", "--caption", "Local photo"],
+      photosDir,
+    );
     const path = join(dir, "simple-video.json"),
       raw = JSON.parse(await readFile(path, "utf8"));
+    assert.equal(raw.image.files.loop, join("demo", "photos", "loop.png"));
+    assert.equal(raw.caption, "Local photo");
     raw.video = {
       ...raw.video,
       width: 180,
@@ -432,10 +453,17 @@ test("local CLI create, cached rerender and export work from a foreign cwd witho
     };
     raw.duration = 2;
     await writeFile(path, JSON.stringify(raw));
-    const created = await cli(
-      ["--project", dir, "create", "--id", "local-smoke", "--quiet"],
-      tmpdir(),
-    );
+    const create = [
+      "--project",
+      dir,
+      "create",
+      "--id",
+      "local-smoke",
+      "--quiet",
+      "--output",
+      join(dir, "review"),
+    ];
+    const created = await cli(create, tmpdir());
     assert.equal(created.data.status, "ready");
     assert.equal(created.data.requests, 0);
     assert.equal(created.data.report.frames, 48);
@@ -454,18 +482,13 @@ test("local CLI create, cached rerender and export work from a foreign cwd witho
     );
     assert.equal(variant.data.paidRequests, 0);
     assert.notEqual(variant.data.report.sha256, created.data.report.sha256);
-    const out = await cli(
-      [
-        "--project",
-        dir,
-        "export",
-        "--run",
-        "local-smoke",
-        "--output",
-        join(dir, "review"),
-      ],
-      tmpdir(),
-    );
+    const out = created.data.export;
+    await access(created.data.contactSheet);
+    const resumed = await cli(create, tmpdir());
+    assert.equal(resumed.data.export.video, out.video);
+    await rm(out.manifest);
+    const resumedWithoutManifest = await cli(create, tmpdir());
+    assert.equal(resumedWithoutManifest.data.export.manifest, out.manifest);
     const exportedVariant = await cli(
       [
         "--project",
@@ -481,11 +504,8 @@ test("local CLI create, cached rerender and export work from a foreign cwd witho
       tmpdir(),
     );
     assert.equal(exportedVariant.data.sha256, variant.data.report.sha256);
-    assert.equal(out.data.published, false);
-    assert.equal(
-      hash(await readFile(out.data.video)),
-      created.data.report.sha256,
-    );
+    assert.equal(out.published, false);
+    assert.equal(hash(await readFile(out.video)), created.data.report.sha256);
     await assert.rejects(
       cli([
         "--project",
@@ -496,8 +516,11 @@ test("local CLI create, cached rerender and export work from a foreign cwd witho
         "--output",
         join(dir, "review"),
       ]),
-      /EEXIST/,
+      /EXPORT_EXISTS/,
     );
+    await writeFile(out.manifest, '{"owner":"unrelated"}');
+    await assert.rejects(cli(create, tmpdir()), /EXPORT_EXISTS/);
+    assert.equal(await readFile(out.manifest, "utf8"), '{"owner":"unrelated"}');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -519,6 +542,10 @@ test("the portable skill copies into a new directory and refuses overwrite", asy
     const destination = join(dir, "nested", "simple-video");
     const response = await cli(["skill", "--output", destination, "--json"]);
     assert.equal(response.data.destination, destination);
+    const { stdout } = await exec(process.execPath, [bin, "skill", "--print"], {
+      cwd: dir,
+    });
+    assert.equal(stdout, await readFile(join(destination, "SKILL.md"), "utf8"));
     assert.match(
       await readFile(join(destination, "SKILL.md"), "utf8"),
       /name: simple-video/,

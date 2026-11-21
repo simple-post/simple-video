@@ -72,8 +72,10 @@ try {
       .configured,
     false,
   );
+  const fixture = join(directory, "fixture");
+  invoke(["init", fixture, "--local"]);
   const project = join(directory, "project");
-  invoke(["init", project, "--template", "single", "--local"]);
+  invoke(["init", project, "--photo", join(fixture, "photos", "loop.png")]);
   const recipeFile = join(project, "simple-video.json");
   const recipe = JSON.parse(readFileSync(recipeFile, "utf8"));
   recipe.video = {
@@ -92,25 +94,18 @@ try {
       "create",
       "--id",
       "package-smoke",
+      "--output",
+      join(directory, "review"),
       "--quiet",
     ]),
   );
   assert.equal(created.data.status, "ready");
   assert.equal(created.data.requests, 0);
   assert.equal(created.data.report.frames, 48);
-  const exported = JSON.parse(
-    invoke([
-      "--project",
-      project,
-      "export",
-      "--run",
-      "package-smoke",
-      "--output",
-      join(directory, "review"),
-    ]),
-  );
-  assert.equal(exported.data.published, false);
-  assert.ok(existsSync(exported.data.video));
+  assert.equal(created.data.export.published, false);
+  assert.ok(existsSync(created.data.export.video));
+  assert.ok(existsSync(created.data.contactSheet));
+  assert.match(invoke(["skill", "--print"]), /name: simple-video/);
   invoke(["skill", "--output", join(directory, "agent-skill")]);
   assert.ok(existsSync(join(directory, "agent-skill", "SKILL.md")));
   console.log(
