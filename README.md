@@ -10,7 +10,7 @@ From your project folder, run this and choose your agent:
 npx skills add simple-post/simple-video --skill simple-video
 ```
 
-The skill gives a terminal-capable agent the instructions to run Simple Video. It can invoke the CLI through npm. Use Node.js 24 or later.
+The skill gives a terminal-capable agent the instructions to run Simple Video. It can invoke the CLI through npm. Use Node.js 24 or later. In Claude Code, invoke it with `/simple-video`; in Codex, with `$simple-video`. Other agents load it automatically when a request matches.
 
 Then ask your agent for a video:
 
@@ -23,19 +23,23 @@ For a free first run, ask it to make a demo with the built-in artwork. For a mat
 ## What you’ll do once
 
 - **Approve renderer setup if needed.** Your agent can check the environment, show you the proposed downloads, and run setup after approval. You need Node.js 24+, FFmpeg with ffprobe and libx264, and a working OpenGL context for the default renderer. The managed Python environment and depth weights can take several GB.
+- **Check your platform.** Rendering is verified on Apple Silicon Macs. Setup includes Intel macOS, glibc Linux and Windows x64 builds, but GPU rendering on those is still untested. Run `doctor --check-render` first, and please [report results](https://github.com/simple-post/simple-video/issues) either way. See [support status](docs/setup.md#support-status).
 - **Add an OpenAI key if you want AI-generated photos.** Run `simple-video auth login` in a terminal and enter the key at the hidden prompt. Choose the native OS store to reuse it across projects, or use a secret manager or environment variable for unattended jobs. Local photos and the demo work without a key.
 
 Once set up, give the agent the brief. It can pick the layout, write the prompts or order the photos, validate the plan, render, fix visual issues using the same images, and return the finished file. The CLI creates the video locally. It sends image-generation requests to OpenAI only if the agent runs generation with `--execute`.
 
 ## Install the skill from npm
 
-The npm package also bundles the skill. In Codex, run this from your project folder:
+The npm package also bundles the skill. Copy it into your agent's skill directory from your project folder:
 
 ```sh
-npx --yes --package=@simple-post/video -- simple-video skill --output .agents/skills/simple-video
+# Claude Code
+npx --yes --package=@simple-post/video@^0.4 -- simple-video skill --output .claude/skills/simple-video
+# Codex
+npx --yes --package=@simple-post/video@^0.4 -- simple-video skill --output .agents/skills/simple-video
 ```
 
-In Codex, invoke it with `$simple-video`. For another agent, use that agent’s skill directory. A terminal-capable agent can also use `npx --yes --package=@simple-post/video -- simple-video skill --print` to read the instructions on demand.
+For another agent, use that agent’s skill directory. A terminal-capable agent can also use `npx --yes --package=@simple-post/video@^0.4 -- simple-video skill --print` to read the instructions on demand. The version range ensures npx doesn't reuse an older cached CLI.
 
 ## Commands your agent runs
 

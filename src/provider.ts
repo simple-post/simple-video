@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { parse } from "dotenv";
 import sharp from "sharp";
 import type { AssetPlan, Spec } from "./spec.js";
-import { hash, safeError } from "./io.js";
+import { cliCommand, hash, safeError } from "./io.js";
 
 export type Generated = { bytes: Buffer; requestId?: string; usage?: unknown };
 export interface ImageProvider {
@@ -69,7 +69,7 @@ export class OpenAIImages implements ImageProvider {
     const key = process.env.OPENAI_API_KEY;
     if (!key)
       throw new ProviderError(
-        "OpenAI API key is missing; run simple-video auth login, or use --env-file / OPENAI_API_KEY",
+        `OpenAI API key is missing; run ${cliCommand("auth login")}, or use --env-file / OPENAI_API_KEY`,
         false,
       );
     const parameters = {

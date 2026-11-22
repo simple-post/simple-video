@@ -21,6 +21,21 @@ export class CliError extends Error {
   }
 }
 
+/**
+ * The command a caller should type to run this CLI again. Agents copy `next`
+ * hints verbatim, so an npx invocation gets an npx hint with the same package
+ * spec rather than a bare `simple-video` that may be missing or older on PATH.
+ */
+export function cliCommand(args?: string) {
+  const spec = process.env.npm_config_package ?? "";
+  const prefix =
+    process.env.npm_command === "exec" &&
+    /^@simple-post\/video(@[\w.^~<>=*|-]+)?$/.test(spec)
+      ? `npx --yes --package ${/^[\w@/.-]+$/.test(spec) ? spec : `'${spec}'`} simple-video`
+      : "simple-video";
+  return args ? `${prefix} ${args}` : prefix;
+}
+
 export const hash = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
 export function stable(value: unknown): string {

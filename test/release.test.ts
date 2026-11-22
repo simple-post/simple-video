@@ -69,3 +69,30 @@ test("registry verification waits for propagation and rejects mismatched artifac
     "verified",
   );
 });
+test("skill and README pin one released minimum CLI version for npx", () => {
+  const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+  const [major, minor] = pkg.version.split(".").map(Number);
+  const docs = ["skills/simple-video/SKILL.md", "README.md"].map((file) => [
+    file,
+    readFileSync(file, "utf8"),
+  ]);
+  const pins = new Set<string>();
+  for (const [file, text] of docs) {
+    // An unpinned npx spec can silently reuse an older cached CLI.
+    assert.doesNotMatch(
+      text!,
+      /--package[ =]@simple-post\/video[ `]/,
+      `${file} has an unpinned npx package`,
+    );
+    for (const match of text!.matchAll(/@simple-post\/video@\^(\d+)\.(\d+)/g))
+      pins.add(`${match[1]}.${match[2]}`);
+  }
+  assert.equal(pins.size, 1, `expected one minimum version, got ${[...pins]}`);
+  const [pinMajor, pinMinor] = [...pins][0]!.split(".").map(Number);
+  assert.equal(pinMajor, major, "the npx range must allow the package major");
+  // Before 1.0, ^0.N matches only 0.N.x, so move the pin with each minor release.
+  if (major === 0) assert.equal(pinMinor, minor, "update the ^0.N npx pin");
+  else assert.ok(pinMinor! <= minor!, "the minimum cannot exceed the package");
+  const skill = docs[0]![1]!;
+  assert.match(skill, new RegExp(`CLI ${pinMajor}\\.${pinMinor}\\.0`));
+});

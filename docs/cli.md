@@ -12,7 +12,7 @@ For agents and scripts, use `--json --no-input`. Piped stdout defaults to JSON; 
 }
 ```
 
-The actual `data` contains the command's complete result. `--no-input` prevents prompts; it never grants authorization or selects an output format. `--quiet` suppresses progress, not errors or approval. Progress uses stderr: readable step names and elapsed time in human mode, newline-delimited JSON in JSON mode:
+The actual `data` contains the command's complete result. A `next` or `hint` field suggests the following command. When the CLI runs through `npx --package @simple-post/video…`, those commands repeat that npx invocation. An unknown flag or command error names the running version, since instructions written for a newer release can use flags an older CLI lacks. `--no-input` prevents prompts; it never grants authorization or selects an output format. `--quiet` suppresses progress, not errors or approval. Progress uses stderr: readable step names and elapsed time in human mode, newline-delimited JSON in JSON mode:
 
 ```json
 { "event": "progress", "stage": "render", "scene": "shot-0" }
@@ -111,7 +111,7 @@ simple-video --project ./story create --id episode-01 --dry-run
 simple-video --project ./story create --id episode-01 --execute
 ```
 
-Use `.data` from `schema` as the JSON Schema. `plan` reports exact asset IDs, scenes, duration, estimate and `budgetFits`. A recipe containing `image.files` defaults to the local provider; otherwise the provider is OpenAI. Use `--provider fixture` for synthetic test images. The OpenAI provider rejects recipes containing `image.files` to avoid ambiguity. Local input requires a file for every planned asset. Mixing generated and local photos in one create command is not currently supported; generate images first, then use them in a local-photo recipe.
+Use `.data` from `schema` as the JSON Schema. `plan` reports exact asset IDs, scenes, duration, estimate and `budgetFits`. `imageSource` is `local` or `openai`. Local recipes list the files that will render in `localFiles` and omit `imageModel`; their prompts are kept only so switching back to generation stays explicit. A recipe containing `image.files` defaults to the local provider; otherwise the provider is OpenAI. Use `--provider fixture` for synthetic test images. The OpenAI provider rejects recipes containing `image.files` to avoid ambiguity. Local input requires a file for every planned asset. Mixing generated and local photos in one create command is not currently supported; generate images first, then use them in a local-photo recipe.
 
 Without `--execute`, an OpenAI create returns a plan and sends no generation request. Local and fixture creates run without that flag. `--dry-run` prevents all generation and rendering regardless of provider. `--images-only` stops at `images-ready`; call create again without it to render the cached images, or use render to create a variant.
 

@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { constants } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { CliError } from "./io.js";
+import { CliError, cliCommand } from "./io.js";
 
 export function credentialsPath(
   directory = process.env.SIMPLE_VIDEO_CONFIG_DIR,
@@ -76,7 +76,7 @@ export async function fileKey() {
     throw new CliError(
       "AUTH_CONFIG_ERROR",
       3,
-      "Saved credentials are unreadable or invalid. Run simple-video auth login to replace them, or auth logout to remove them.",
+      `Saved credentials are unreadable or invalid. Run ${cliCommand("auth login")} to replace them, or auth logout to remove them.`,
     );
   } finally {
     await handle.close();

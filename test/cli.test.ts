@@ -17,7 +17,7 @@ import { SpecSchema, template, planExperiment } from "../src/spec.js";
 import { initProject, readRecipe } from "../src/project.js";
 import { LocalImages } from "../src/provider.js";
 import { uvArtifact, setup, runtimePaths } from "../src/runtime.js";
-import { CliError, hash } from "../src/io.js";
+import { CliError, cliCommand, hash } from "../src/io.js";
 
 const exec = promisify(execFile);
 const bin = fileURLToPath(new URL("../../bin/run.js", import.meta.url));
@@ -557,4 +557,102 @@ test("the portable skill copies into a new directory and refuses overwrite", asy
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+test("next hints repeat the npx invocation an agent used, and stay bare otherwise", () => {
+  const saved = {
+    command: process.env.npm_command,
+    pkg: process.env.npm_config_package,
+  };
+  try {
+    delete process.env.npm_command;
+    delete process.env.npm_config_package;
+    assert.equal(cliCommand("setup"), "simple-video setup");
+    process.env.npm_command = "exec";
+    process.env.npm_config_package = "@simple-post/video@^0.4";
+    assert.equal(
+      cliCommand("auth login"),
+      "npx --yes --package '@simple-post/video@^0.4' simple-video auth login",
+    );
+    process.env.npm_config_package = "@simple-post/video@0.4.1";
+    assert.equal(
+      cliCommand(),
+      "npx --yes --package @simple-post/video@0.4.1 simple-video",
+    );
+    process.env.npm_config_package = "@simple-post/video;rm -rf /";
+    assert.equal(cliCommand(), "simple-video");
+    process.env.npm_config_package = "other-package";
+    assert.equal(cliCommand(), "simple-video");
+  } finally {
+    for (const [key, value] of [
+      ["npm_command", saved.command],
+      ["npm_config_package", saved.pkg],
+    ] as const)
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+  }
+});
+test("local plans report the files that will render, not generation settings", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "simple-video-local-plan-"));
+  try {
+    await cli(["init", join(dir, "demo"), "--local"]);
+    const demo = await cli(["--project", join(dir, "demo"), "plan"]);
+    assert.equal(demo.data.imageSource, "local");
+    assert.equal(demo.data.imageModel, undefined);
+    assert.match(demo.data.localFiles.loop, /photos[/\\]loop\.png$/);
+    assert.match(demo.data.descriptions[0].prompt, /^Local demo artwork/);
+    const story = await initProject(join(dir, "story"), "story", true);
+    const photos = join(story.directory, "photos");
+    await cli(
+      [
+        "init",
+        join(dir, "slides"),
+        "--photo",
+        "shot-0.png",
+        "--photo",
+        "shot-1.png",
+      ],
+      photos,
+    );
+    const raw = JSON.parse(
+      await readFile(join(dir, "slides", "simple-video.json"), "utf8"),
+    );
+    assert.ok(raw.shots.every((s: object) => !("referencePrevious" in s)));
+    const slides = await cli(["--project", join(dir, "slides"), "plan"]);
+    assert.equal(slides.data.imageSource, "local");
+    assert.deepEqual(Object.keys(slides.data.localFiles), ["shot-0", "shot-1"]);
+    const generated = await cli([
+      "init",
+      join(dir, "generated"),
+      "--prompt",
+      "A lighthouse at dusk",
+    ]);
+    assert.equal(generated.ok, true);
+    const plan = await cli(["--project", join(dir, "generated"), "plan"]);
+    assert.equal(plan.data.imageSource, "openai");
+    assert.equal(typeof plan.data.imageModel, "string");
+    assert.equal(plan.data.localFiles, undefined);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+test("unknown flags name the running version so agents can spot an old CLI", async () => {
+  const pkg = JSON.parse(
+    await readFile(
+      fileURLToPath(new URL("../../package.json", import.meta.url)),
+      "utf8",
+    ),
+  );
+  await assert.rejects(
+    cli(["doctor", "--no-such-flag", "--json"]),
+    (e: unknown) => {
+      const error = JSON.parse((e as { stderr: string }).stderr.trim());
+      assert.equal(error.error.code, "INVALID_INPUT");
+      assert.match(
+        error.error.message,
+        new RegExp(`simple-video ${pkg.version.replaceAll(".", "\\.")}`),
+      );
+      assert.match(error.error.message, /--version/);
+      return true;
+    },
+  );
 });

@@ -24,6 +24,7 @@ import {
   safeId,
   fileHash,
   stable,
+  cliCommand,
 } from "./io.js";
 import { type Run } from "./runner.js";
 
@@ -49,7 +50,12 @@ export function recipePlan(spec: Spec) {
     ...plan,
     paidImageRequests: spec.image.files ? 0 : plan.assets.length,
     assetIds: plan.assets.map((a) => a.id),
-    imageModel: spec.image.model,
+    imageSource: spec.image.files ? "local" : "openai",
+    // Local recipes keep prompts only so switching back to generation stays
+    // explicit; report the files that will actually appear instead.
+    ...(spec.image.files
+      ? { localFiles: spec.image.files }
+      : { imageModel: spec.image.model }),
     descriptions: describeImages(spec),
     budget: spec.budget,
     estimatedUsd: spec.image.files
@@ -248,6 +254,9 @@ export async function initProject(
     spec.image.files = Object.fromEntries(
       assets.map((asset, i) => [asset.id, paths[i]!]),
     );
+    // Supplied photos are used as-is; an edit reference only applies to generation.
+    if (spec.type === "story" || spec.type === "challenge")
+      for (const shot of spec.shots) delete shot.referencePrevious;
   }
   if (local) {
     const assets = planExperiment(spec).assets;
@@ -265,6 +274,13 @@ export async function initProject(
       );
       spec.image.files[asset.id] = path;
     }
+    // Describe what will render, not the template's generation prompts.
+    if (spec.type === "loop")
+      spec.prompt = "Local demo artwork: geometric mountains (photos/loop.png)";
+    else if (spec.type !== "battle")
+      spec.shots.forEach((shot, i) => {
+        shot.prompt = `Local demo artwork: geometric mountains (photos/shot-${i}.png)`;
+      });
   }
   await writeJson(recipe, spec);
   for (const [name, content] of [
@@ -293,7 +309,7 @@ export async function initProject(
         : spec.type === "battle"
           ? "hero, opponent, environment and rounds"
           : "shots[].prompt",
-    next: `simple-video --project ${JSON.stringify(dir)} plan`,
+    next: cliCommand(`--project ${JSON.stringify(dir)} plan`),
   };
 }
 export async function exportRun(
@@ -388,6 +404,6 @@ export async function exportRun(
   return {
     ...result,
     manifest,
-    next: "Review the video, then attach the exported MP4 using simplepost post --video. This command never publishes.",
+    next: "Review the video and give the user the MP4 path. This command never uploads or publishes; share or schedule the file only if the user asks.",
   };
 }

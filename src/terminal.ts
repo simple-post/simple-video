@@ -172,6 +172,8 @@ export function resultText(command: string, data: any): string {
       `  Video: ${data.duration}s · ${data.scenes.length} scene(s) · ${data.assetIds.length} photo(s)`,
       `  Paid image requests: ${data.paidImageRequests}`,
     ];
+    if (data.localFiles)
+      rows.push("  Photos: local files; no API key or paid request needed");
     if (data.paidImageRequests)
       rows.push(
         `  Image model: ${data.imageModel}`,

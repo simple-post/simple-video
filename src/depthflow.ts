@@ -11,6 +11,7 @@ import {
   readJson,
   stable,
   writeJson,
+  cliCommand,
 } from "./io.js";
 import { depthMap, type DepthEstimator } from "./depth.js";
 import { depthPanel } from "./parallax.js";
@@ -72,7 +73,7 @@ export async function renderDepthflowScene(
   const binary = depthflowRuntime();
   await access(binary).catch(() => {
     throw Error(
-      "DepthFlow runtime is missing. Run simple-video setup; no CPU fallback is used.",
+      `DepthFlow runtime is missing. Run ${cliCommand("setup")}; no CPU fallback is used.`,
     );
   });
   const workspace = runtimePaths().workspace;

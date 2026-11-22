@@ -5,7 +5,14 @@ import { readdir, cp, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { SpecSchema, planExperiment } from "./spec.js";
-import { CliError, command, readJson, safeError, safeId } from "./io.js";
+import {
+  CliError,
+  cliCommand,
+  command,
+  readJson,
+  safeError,
+  safeId,
+} from "./io.js";
 import { runExperiment, requestTotals, type Run } from "./runner.js";
 import {
   LocalImages,
@@ -53,16 +60,15 @@ import {
   askText,
 } from "./terminal.js";
 
+const version: string = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+).version;
 const program = new Command()
   .name("simple-video")
   .description(
     "Create photo-parallax videos. Readable terminal output; use --json for automation. Setup asks before installing. No automatic publishing.",
   )
-  .version(
-    JSON.parse(
-      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-    ).version,
-  )
+  .version(version)
   .option("--project <directory>", "project directory", ".")
   .option(
     "--root <directory>",
@@ -280,7 +286,7 @@ auth
         throw new CliError(
           "INPUT_REQUIRED",
           2,
-          "Run simple-video auth login in a terminal to paste your key privately, or use --from-env / --stdin for automation.",
+          `Run ${cliCommand("auth login")} in a terminal to paste your key privately, or use --from-env / --stdin for automation.`,
         );
       process.stderr.write(
         "The key is reused across projects. No provider API request is made.\n",
@@ -469,7 +475,7 @@ program
         executed: true,
         authOnly: true,
         authentication: await configureStorage(chosen),
-        next: "simple-video auth login",
+        next: cliCommand("auth login"),
       });
       return;
     }
@@ -556,7 +562,7 @@ program
       publishing: false,
       hint: ready
         ? "Use doctor --check-render to verify GPU rendering"
-        : "Run simple-video setup; install ffmpeg/ffprobe separately if missing",
+        : `Run ${cliCommand("setup")}; install ffmpeg/ffprobe separately if missing`,
     });
     if (!ready) process.exitCode = 3;
   });
@@ -619,7 +625,7 @@ program
         provider: name,
         next:
           name === "openai"
-            ? "Run simple-video auth login once (or use OPENAI_API_KEY / --env-file), then add --execute to authorize generation"
+            ? `Run ${cliCommand("auth login")} once (or use OPENAI_API_KEY / --env-file), then add --execute to authorize generation`
             : "Omit --dry-run to render",
       });
       return;
@@ -627,7 +633,7 @@ program
     if (name === "openai") await loadSavedKey();
     if (name === "openai" && !process.env.OPENAI_API_KEY)
       throw Error(
-        "OpenAI API key is missing. Run simple-video auth login once, or supply OPENAI_API_KEY through the environment or --env-file.",
+        `OpenAI API key is missing. Run ${cliCommand("auth login")} once, or supply OPENAI_API_KEY through the environment or --env-file.`,
       );
     const provider =
       name === "local"
@@ -793,6 +799,13 @@ else {
     else {
       const { code, exitCode } = classifyError(error);
       let message = safeError(error);
+      if (
+        error instanceof CommanderError &&
+        ["commander.unknownOption", "commander.unknownCommand"].includes(
+          error.code,
+        )
+      )
+        message += `. This is simple-video ${version}. Instructions written for a newer release can use flags it lacks; check --version, or run npx --yes --package @simple-post/video@latest simple-video.`;
       for (const key of ["OPENAI_API_KEY", "GEMINI_API_KEY", "FAL_KEY"]) {
         const secret = process.env[key];
         if (secret) message = message.replaceAll(secret, "[REDACTED]");

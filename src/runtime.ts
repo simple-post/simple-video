@@ -11,6 +11,7 @@ import {
   readJson,
   withLock,
   writeJson,
+  cliCommand,
 } from "./io.js";
 import { uvAssets } from "./uv-assets.js";
 
@@ -190,7 +191,7 @@ export async function setup(options: {
     throw new CliError(
       "CONFIRMATION_REQUIRED",
       2,
-      "Setup needs your approval before downloading or installing anything. Run simple-video setup in a terminal to review and confirm, or add --yes for an unattended install. Use --dry-run to preview only.",
+      `Setup needs your approval before downloading or installing anything. Run ${cliCommand("setup")} in a terminal to review and confirm, or add --yes for an unattended install. Use --dry-run to preview only.`,
       { plan, executed: false },
     );
   const p = runtimePaths();
@@ -273,7 +274,7 @@ export async function setup(options: {
     return {
       ...plan,
       executed: true,
-      next: "simple-video doctor --check-render",
+      next: cliCommand("doctor --check-render"),
     };
   });
 }
@@ -281,7 +282,7 @@ export async function probeGraphics() {
   const p = runtimePaths();
   const binary = process.env.SIMPLE_VIDEO_DEPTHFLOW ?? p.depthflow;
   if (!(await exists(binary)))
-    throw Error("DepthFlow is missing. Run simple-video setup.");
+    throw Error(`DepthFlow is missing. Run ${cliCommand("setup")}.`);
   const dir = await mkdtemp(join(tmpdir(), "simple-video-graphics-"));
   try {
     const image = join(dir, "image.png"),
