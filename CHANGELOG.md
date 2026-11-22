@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.4.1 — 2026-11-22
+## 1.0.0 — 2026-11-22
 
-- The agent skill and README pin `npx` to `@simple-post/video@^0.4` and ask agents to check `--version`. An unpinned spec could run an older CLI from the npx cache, a global install or a release-age policy, and fail on newer flags.
+- The README, examples and agent skill use `@simple-post/video@latest` to select the current stable CLI. The skill asks agents to check the version when using an installed copy.
 - `next` and `hint` commands repeat the npx invocation when the CLI runs through npx. Unknown flag or command errors name the running version.
 - `plan` reports `imageSource`. Local recipes list the `localFiles` that will render instead of an image model. `init --local` recipes describe the demo artwork, and `init --photo` slideshows no longer set the generation-only `referencePrevious` flag.
 - Export results no longer point at a separate publishing CLI. The skill states when paid generation is authorized, and the README covers Claude Code and platform support.

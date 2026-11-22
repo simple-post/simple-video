@@ -1,6 +1,6 @@
 {
   "name": "@simple-post/video",
-  "version": "0.4.1",
+  "version": "1.0.0",
   "type": "module",
   "engines": {
     "node": ">=24"

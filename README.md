@@ -34,19 +34,19 @@ The npm package also bundles the skill. Copy it into your agent's skill director
 
 ```sh
 # Claude Code
-npx --yes --package=@simple-post/video@^0.4 -- simple-video skill --output .claude/skills/simple-video
+npx --yes --package=@simple-post/video@latest -- simple-video skill --output .claude/skills/simple-video
 # Codex
-npx --yes --package=@simple-post/video@^0.4 -- simple-video skill --output .agents/skills/simple-video
+npx --yes --package=@simple-post/video@latest -- simple-video skill --output .agents/skills/simple-video
 ```
 
-For another agent, use that agent’s skill directory. A terminal-capable agent can also use `npx --yes --package=@simple-post/video@^0.4 -- simple-video skill --print` to read the instructions on demand. The version range ensures npx doesn't reuse an older cached CLI.
+For another agent, use that agent’s skill directory. A terminal-capable agent can also use `npx --yes --package=@simple-post/video@latest -- simple-video skill --print` to read the instructions on demand. The `latest` tag selects the current stable release.
 
 ## Commands your agent runs
 
 Install the CLI if you prefer a command on PATH:
 
 ```sh
-npm install -g @simple-post/video
+npm install -g @simple-post/video@latest
 simple-video --version
 ```
 
